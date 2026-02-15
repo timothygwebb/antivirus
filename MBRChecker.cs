@@ -50,5 +50,13 @@ namespace antivirus
                 return false;
             }
         }
+
+        // Checks if the program is running with administrative privileges
+        public static bool IsRunningAsAdministrator()
+        {
+            var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            var principal = new System.Security.Principal.WindowsPrincipal(identity);
+            return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
     }
 }
