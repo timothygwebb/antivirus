@@ -1,3 +1,5 @@
+using System.IO;
+
 namespace antivirus
 {
     public enum LogLevel
@@ -10,10 +12,42 @@ namespace antivirus
 
     public class Logger
     {
+        private static readonly string LogFilePath = Path.Combine(Directory.GetCurrentDirectory(), "antivirus.log");
+        private static bool logPathPrinted = false;
+
         public static void LogMessage(LogLevel level, string format, object[] args)
         {
-            string message = string.Format(format, args);
-            System.Console.WriteLine("[" + level.ToString() + "] " + message);
+            string message;
+            if (args != null && args.Length > 0)
+            {
+                try
+                {
+                    message = string.Format(format, args);
+                }
+                catch (System.FormatException)
+                {
+                    message = format + " [Logger: FormatException]";
+                }
+            }
+            else
+            {
+                message = format;
+            }
+            string logEntry = "[" + level.ToString() + "] " + message;
+            System.Console.WriteLine(logEntry);
+            try
+            {
+                if (!logPathPrinted)
+                {
+                    System.Console.WriteLine($"Log file path: {LogFilePath}");
+                    logPathPrinted = true;
+                }
+                File.AppendAllText(LogFilePath, logEntry + System.Environment.NewLine);
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine($"Failed to write to log file: {ex.Message}");
+            }
         }
 
         public static void LogInfo(string format, object[] args)
