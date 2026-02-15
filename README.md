@@ -1,6 +1,3 @@
-# antivirus
-Antivirus for all systems.
-
 # Antivirus Recovery Tool
 
 ## Bootable CD/USB Usage
