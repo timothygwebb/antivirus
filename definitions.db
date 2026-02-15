@@ -1,0 +1,9 @@
+# Example virus definitions database
+# List suspicious file names (one per line)
+CIH
+Chernobyl
+Mona.exe
+Surprise
+malware.exe
+badfile.dll
+suspicious.doc
