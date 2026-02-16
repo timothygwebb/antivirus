@@ -3,7 +3,7 @@ using System.IO;
 using Xunit;
 using antivirus;
 
-namespace antivirus.antivirus.Tests
+namespace antivirus.Tests
 {
     public class ScannerTests
     {
@@ -36,11 +36,31 @@ namespace antivirus.antivirus.Tests
     // Stub for Logger to capture logs
     public static class LoggerStub
     {
-        public static string? LastError;
+        private static readonly object _lock = new();
+        private static string? _lastError;
+
+        public static string? LastError
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _lastError;
+                }
+            }
+            set
+            {
+                lock (_lock)
+                {
+                    _lastError = value;
+                }
+            }
+        }
+
         public static void Reset() => LastError = null;
-        public static void LogError(string msg, object[] _) => LastError = msg;
-        public static void LogWarning(string msg, object[] _) { }
-        public static void LogInfo(string msg, object[] _) { }
-        public static void LogResult(string msg, object[] _) { }
+        public static void LogError(string msg, object[] _1) => LastError = msg;
+        public static void LogWarning(string msg, object[] _2) { }
+        public static void LogInfo(string msg, object[] _3) { }
+        public static void LogResult(string msg, object[] _4) { }
     }
 }

@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="antivirus.csproj" />
+  <Project Path="antivirus.Tests/antivirus.Tests.csproj" />
 </Solution>
