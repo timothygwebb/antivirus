@@ -349,8 +349,22 @@ namespace antivirus
             }
             catch (Exception ex)
             {
-                Logger.LogError($"Failed to start ClamAV daemon: {ex.Message}", Array.Empty<object>());
+                if (ex?.Message != null)
+                {
+                    Logger.LogError($"Failed to start ClamAV daemon: {ex.Message}", Array.Empty<object>());
+                }
+                else
+                {
+                    Logger.LogError("Failed to start ClamAV daemon: Unknown error", Array.Empty<object>());
+                }
             }
+        }
+
+        private static ILogger Logger = new DefaultLogger(); // Default logger implementation
+
+        public static void SetLogger(ILogger logger)
+        {
+            Logger = logger;
         }
 
         /// <summary>

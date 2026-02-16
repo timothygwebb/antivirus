@@ -3,7 +3,7 @@ using System.IO;
 using Xunit;
 using antivirus;
 
-namespace antivirus.Tests
+namespace antivirus.antivirus.Tests
 {
     public class ScannerTests
     {
@@ -22,24 +22,27 @@ namespace antivirus.Tests
         {
             // Arrange
             string nonExistent = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-            LoggerStub.Reset();
+            LocalTestLogger logger = new LocalTestLogger();
+            Scanner.SetLogger(logger); // Inject the test logger
+
             // Act
             Scanner.Scan(nonExistent);
+
             // Assert
-            Assert.NotNull(LoggerStub.LastError);
-            Assert.Contains($"Path not found: {nonExistent}", LoggerStub.LastError!);
+            Assert.NotNull(logger.LastError);
+            Assert.Contains($"Path not found: {nonExistent}", logger.LastError!);
         }
 
         // Additional tests for EnsureLegacyBrowserInstalled and Scan can be added with more advanced mocking
     }
 
-    // Stub for Logger to capture logs
-    public static class LoggerStub
+    // Convert LocalTestLogger to a non-static class for dependency injection
+    public class LocalTestLogger : ILogger
     {
         private static readonly object _lock = new();
         private static string? _lastError;
 
-        public static string? LastError
+        public string? LastError
         {
             get
             {
@@ -48,7 +51,7 @@ namespace antivirus.Tests
                     return _lastError;
                 }
             }
-            set
+            private set
             {
                 lock (_lock)
                 {
@@ -57,10 +60,10 @@ namespace antivirus.Tests
             }
         }
 
-        public static void Reset() => LastError = null;
-        public static void LogError(string msg, object[] _1) => LastError = msg;
-        public static void LogWarning(string msg, object[] _2) { }
-        public static void LogInfo(string msg, object[] _3) { }
-        public static void LogResult(string msg, object[] _4) { }
+        public void Reset() => LastError = null;
+        public void LogError(string message, object[] _) => LastError = message;
+        public void LogWarning(string message, object[] _) { }
+        public void LogInfo(string message, object[] _) { }
+        public void LogResult(string message, object[] _) { }
     }
 }
