@@ -8,10 +8,13 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <StartupObject>antivirus.Program</StartupObject>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RunAnalyzersDuringBuild>False</RunAnalyzersDuringBuild>
+    <RunAnalyzersDuringLiveAnalysis>False</RunAnalyzersDuringLiveAnalysis>
+    <EnableNETAnalyzers>False</EnableNETAnalyzers>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="xunit" Version="2.9.3" />
+    <None Include=".github\copilot-instructions.md" />
   </ItemGroup>
 
 </Project>
