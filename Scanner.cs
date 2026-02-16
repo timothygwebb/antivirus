@@ -34,12 +34,12 @@ namespace antivirus
         /// <summary>
         /// Downloads a file asynchronously using HttpClient.
         /// </summary>
-        private static async System.Threading.Tasks.Task DownloadFileAsync(string url, string destination)
+        private static async Task DownloadFileAsync(string url, string filePath)
         {
             using var httpClient = new HttpClient();
             using var response = await httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
-            using var fs = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None);
+            await using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
             await response.Content.CopyToAsync(fs);
         }
 
@@ -117,7 +117,11 @@ namespace antivirus
                 Console.WriteLine($"ClamAV not found: {ClamdExe}. Attempting to download...");
                 try
                 {
-                    System.Net.ServicePointManager.ServerCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
+                    var handler = new HttpClientHandler
+                    {
+                        ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
+                    };
+                    using var httpClient = new HttpClient(handler);
                     string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
                     DownloadFileAsync(ClamAVZipUrl, tempZip).GetAwaiter().GetResult();
                     ZipFile.ExtractToDirectory(tempZip, ClamAVDir, true);
@@ -225,12 +229,6 @@ namespace antivirus
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                Logger.LogWarning($"Failed to start clamd.exe: {ex.Message}", Array.Empty<object>());
-                Console.WriteLine($"Failed to start clamd.exe: {ex.Message}");
-                Console.WriteLine("If you see errors, try running clamd.exe manually in the ClamAV directory. If it fails, check for missing dependencies (like Visual C++ Redistributable) or configuration issues. Also check Windows Defender or firewall settings.");
-            }
         }
 
         /// <summary>
@@ -241,14 +239,13 @@ namespace antivirus
             string tempDir = Path.GetTempPath();
             string kmeleonInstaller = Path.Combine(tempDir, "K-Meleon76RC2.7z");
             string operaInstaller = Path.Combine(tempDir, "Opera_Portable.exe");
-            System.Net.ServicePointManager.ServerCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
 
             // Try K-Meleon first
             try
             {
-                using var client = new WebClient();
+                using var httpClient = new HttpClient();
                 Logger.LogInfo("Attempting to download K-Meleon browser...", Array.Empty<object>());
-                client.DownloadFile(KmeleonUrl, kmeleonInstaller);
+                DownloadFileAsync(KmeleonUrl, kmeleonInstaller).GetAwaiter().GetResult();
                 Logger.LogInfo("K-Meleon browser downloaded. Please extract and run manually if needed.", Array.Empty<object>());
                 Console.WriteLine("K-Meleon browser downloaded as archive. Please extract and run manually if needed.");
                 Process.Start("explorer.exe", $"/select,\"{kmeleonInstaller}\"");
@@ -262,9 +259,9 @@ namespace antivirus
             // Try Opera as fallback
             try
             {
-                using var client = new WebClient();
+                using var httpClient = new HttpClient();
                 Logger.LogInfo("Attempting to download Opera browser...", Array.Empty<object>());
-                client.DownloadFile(OperaUrl, operaInstaller);
+                DownloadFileAsync(OperaUrl, operaInstaller).GetAwaiter().GetResult();
                 Logger.LogInfo("Opera browser downloaded. Please run manually if needed.", Array.Empty<object>());
                 Console.WriteLine("Opera browser downloaded. Please run manually if needed.");
                 Process.Start("explorer.exe", $"/select,\"{operaInstaller}\"");
@@ -359,31 +356,15 @@ namespace antivirus
                 }
                 else if (clamResult.Contains("OK", StringComparison.OrdinalIgnoreCase))
                 {
-                    Logger.LogResult($"ClamAV: File clean: {filePath}", Array.Empty<object>());
+                    Logger.LogResult($"File clean: {filePath}", Array.Empty<object>());
                     return;
-                }
-                else
-                {
-                    Logger.LogWarning($"ClamAV scan inconclusive: {clamResult}", Array.Empty<object>());
                 }
             }
 
             bool heuristicThreat = filePath.Contains("virus", StringComparison.OrdinalIgnoreCase) || new FileInfo(filePath).Length > 10_000_000;
-            bool dbThreat = Definitions.IsKnownThreat(filePath);
-
-            if (dbThreat)
-            {
-                Logger.LogError($"Known virus detected: {filePath}", Array.Empty<object>());
-                Quarantine.QuarantineFile(filePath);
-            }
-            else if (heuristicThreat)
+            if (heuristicThreat)
             {
                 Logger.LogWarning($"Heuristic threat detected: {filePath}", Array.Empty<object>());
-                Quarantine.QuarantineFile(filePath);
-            }
-            else if (filePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            {
-                Logger.LogResult($"File clean (exe): {filePath}", Array.Empty<object>());
             }
             else
             {
@@ -413,7 +394,7 @@ namespace antivirus
                     size[1] = (byte)((bytesRead >> 16) & 0xFF);
                     size[2] = (byte)((bytesRead >> 8) & 0xFF);
                     size[3] = (byte)(bytesRead & 0xFF);
-                    stream.Write(size, 0, 4);
+                    stream.Write(size, 0, size.Length);
                     stream.Write(buffer, 0, bytesRead);
                 }
                 stream.Write(new byte[4], 0, 4);
@@ -436,7 +417,7 @@ namespace antivirus
         }
 
         /// <summary>
-        /// Entry point for scanning a file or directory.
+        /// Scans the given input path (file or directory).
         /// </summary>
         public static void Scan(string input)
         {
@@ -452,7 +433,6 @@ namespace antivirus
             {
                 if (!ShouldSkipFile(input))
                 {
-                    Logger.LogInfo($"Scanning file: {input}", Array.Empty<object>());
                     ScanFile(input);
                 }
             }
@@ -470,6 +450,26 @@ namespace antivirus
         {
             var drive = new DriveInfo(Directory.GetCurrentDirectory());
             return drive.DriveType == DriveType.CDRom || drive.DriveType == DriveType.Removable;
+        }
+
+        /// <summary>
+        /// Ensures the definitions database exists.
+        /// </summary>
+        private static void EnsureDefinitionsDatabase()
+        {
+            string DefinitionsDbPath = Path.Combine(ClamAVDir, "definitions.db");
+            if (!File.Exists(DefinitionsDbPath))
+            {
+                try
+                {
+                    File.Create(DefinitionsDbPath).Dispose();
+                    Logger.LogInfo($"Created missing definitions database at {DefinitionsDbPath}.", Array.Empty<object>());
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"Failed to create definitions database: {ex.Message}", Array.Empty<object>());
+                }
+            }
         }
     }
 }

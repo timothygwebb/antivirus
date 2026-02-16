@@ -26,7 +26,8 @@ namespace antivirus.antivirus.Tests
             // Act
             Scanner.Scan(nonExistent);
             // Assert
-            Assert.Contains(LoggerStub.LastError, $"Path not found: {nonExistent}");
+            Assert.NotNull(LoggerStub.LastError);
+            Assert.Contains($"Path not found: {nonExistent}", LoggerStub.LastError!);
         }
 
         // Additional tests for EnsureLegacyBrowserInstalled and Scan can be added with more advanced mocking
