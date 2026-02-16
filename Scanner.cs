@@ -1,12 +1,12 @@
 using System;
-using System.IO;
-using System.Net.Sockets;
-using System.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Net;
+using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
+using System.Text;
 
 namespace antivirus
 {
@@ -15,14 +15,27 @@ namespace antivirus
     /// </summary>
     public static class Scanner
     {
-        private static readonly HashSet<string> ExcludedExtensions = new()
-        {
-            ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml"
-        };
+        // Simplified collection initializations
+        private static readonly HashSet<string> ExcludedExtensions = new() { ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml" };
         private static readonly string[] ExcludedFolders = { "bin", "obj", ".git" };
-        private static readonly HashSet<string> ExcludedFiles = new()
+        private static readonly HashSet<string> ExcludedFiles = new() { "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys" };
+
+        // CA1861: Move constant arrays to static readonly fields
+        private static readonly string[] FreshclamConfDefault =
         {
-            "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys"
+            $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
+            "DatabaseMirror database.clamav.net"
+        };
+        private static readonly string[] ClamdConfDefault =
+        {
+            $"LogFile {Path.Combine(ClamAVDir, "clamd.log").Replace("\\", "/")}",
+            $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
+            "TCPSocket 3310",
+            "TCPAddr 127.0.0.1",
+            "Foreground true",
+            "ScanPE true",
+            "ScanELF false",
+            "ScanMail false"
         };
         private static bool clamAvWarned = false;
         private static readonly string ClamAVDir = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
@@ -31,13 +44,15 @@ namespace antivirus
         private static readonly string KmeleonUrl = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
         private static readonly string OperaUrl = "https://www.opera.com/computer/thanks?ni=stable_portable&os=windows";
 
+        // Move constant arrays to static readonly fields for CA1861
+        private static readonly string[] AllowedExtensions = { ".cvd", ".cld", ".exe", ".dll", ".conf", ".log" };
+        private static readonly string[] AllowedFiles = { "clamd.exe", "freshclam.exe", "clamd.conf", "freshclam.conf", "clamd.log" };
 
         /// <summary>
         /// Downloads a file asynchronously using HttpClient.
         /// </summary>
         private static async Task DownloadFileAsync(string url, string filePath)
         {
-            using var httpClient = new HttpClient();
             using var httpClient = new HttpClient();
             using var response = await httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
@@ -91,8 +106,8 @@ namespace antivirus
         /// </summary>
         private static void CleanClamAVDirectory()
         {
-            var allowedExtensions = new HashSet<string>(new[] { ".cvd", ".cld", ".exe", ".dll", ".conf", ".log" }, StringComparer.OrdinalIgnoreCase);
-            var allowedFiles = new HashSet<string>(new[] { "clamd.exe", "freshclam.exe", "clamd.conf", "freshclam.conf", "clamd.log" }, StringComparer.OrdinalIgnoreCase);
+            var allowedExtensions = new HashSet<string>(AllowedExtensions, StringComparer.OrdinalIgnoreCase);
+            var allowedFiles = new HashSet<string>(AllowedFiles, StringComparer.OrdinalIgnoreCase);
             foreach (var file in Directory.GetFiles(ClamAVDir))
             {
                 string ext = Path.GetExtension(file);
@@ -135,8 +150,12 @@ namespace antivirus
                         {
                             string relPath = Path.GetRelativePath(subDir, file);
                             string destPath = Path.Combine(ClamAVDir, relPath);
-                            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-                            File.Move(file, destPath, true);
+                            var destDir = Path.GetDirectoryName(destPath);
+                            if (destDir != null)
+                            {
+                                Directory.CreateDirectory(destDir);
+                                File.Move(file, destPath, true);
+                            }
                         }
                         foreach (var dir in Directory.GetDirectories(subDir, "*", SearchOption.AllDirectories))
                         {
@@ -162,12 +181,7 @@ namespace antivirus
             {
                 try
                 {
-                    var conf = new[]
-                    {
-                        $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
-                        "DatabaseMirror database.clamav.net"
-                    };
-                    File.WriteAllLines(freshclamConf, conf);
+                    File.WriteAllLines(freshclamConf, FreshclamConfDefault);
                     Logger.LogInfo("Created default freshclam.conf for ClamAV.", Array.Empty<object>());
                 }
                 catch (Exception ex)
@@ -181,18 +195,7 @@ namespace antivirus
             {
                 try
                 {
-                    var conf = new[]
-                    {
-                        $"LogFile {Path.Combine(ClamAVDir, "clamd.log").Replace("\\", "/")}",
-                        $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
-                        "TCPSocket 3310",
-                        "TCPAddr 127.0.0.1",
-                        "Foreground true",
-                        "ScanPE true",
-                        "ScanELF false",
-                        "ScanMail false"
-                    };
-                    File.WriteAllLines(clamdConf, conf);
+                    File.WriteAllLines(clamdConf, ClamdConfDefault);
                     Logger.LogInfo("Created default clamd.conf for ClamAV.", Array.Empty<object>());
                 }
                 catch (Exception ex)
@@ -233,8 +236,8 @@ namespace antivirus
         /// <summary>
         /// Ensures a legacy browser is downloaded for environments lacking a modern browser.
         /// </summary>
-            }
-        }
+        private static void EnsureLegacyBrowserDownloaded()
+        {
             string tempDir = Path.GetTempPath();
             string kmeleonInstaller = Path.Combine(tempDir, "K-Meleon76RC2.7z");
             string operaInstaller = Path.Combine(tempDir, "Opera_Portable.exe");
@@ -278,6 +281,7 @@ namespace antivirus
         /// <param name="path">The directory path to scan.</param>
         private static void ScanDirectorySafe(string path)
         {
+            // Add catch block for CS1524
             try
             {
                 foreach (var file in Directory.GetFiles(path))
@@ -291,13 +295,13 @@ namespace antivirus
                     ScanDirectorySafe(dir);
                 }
             }
-            catch (UnauthorizedAccessException ex)
-            {
-                Logger.LogWarning($"Access denied to directory: {path} ({ex.Message})", Array.Empty<object>());
-            }
             catch (IOException ex)
             {
                 Logger.LogWarning($"IO error in directory: {path} ({ex.Message})", Array.Empty<object>());
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Unexpected error in directory {path}: {ex.Message}", Array.Empty<object>());
             }
         }
 
@@ -369,11 +373,17 @@ namespace antivirus
             {
                 Logger.LogResult($"File clean: {filePath}", Array.Empty<object>());
             }
-        {
-            try
+        }
+
         /// <summary>
         /// Scans a file with ClamAV via TCP and returns the result string, or null if failed.
         /// </summary>
+        private static string? ScanWithClamAV(string filePath)
+        {
+            try
+            {
+                using var client = new TcpClient("127.0.0.1", 3310);
+                using var stream = client.GetStream();
                 byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
                 stream.Write(cmd, 0, cmd.Length);
 
@@ -401,12 +411,6 @@ namespace antivirus
             catch (Exception ex)
             {
                 if (!clamAvWarned)
-                ms.Write(respBuffer, 0, respBytes);
-                return Encoding.ASCII.GetString(ms.ToArray());
-            }
-            catch (Exception ex)
-            {
-                if (!clamAvWarned)
                 {
                     Logger.LogWarning($"ClamAV scan failed: {ex.Message}", Array.Empty<object>());
                     clamAvWarned = true;
@@ -428,12 +432,6 @@ namespace antivirus
                 Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
                 ScanDirectorySafe(input);
             }
-            Definitions.LoadDefinitions();
-            if (Directory.Exists(input))
-            {
-                Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
-                ScanDirectorySafe(input);
-            }
             else if (File.Exists(input))
             {
                 if (!ShouldSkipFile(input))
@@ -447,12 +445,6 @@ namespace antivirus
             }
             Logger.LogInfo("Scanning finished", Array.Empty<object>());
         }
-
-        /// <summary>
-        /// Determines if the application is running from a removable or CD-ROM drive.
-        /// </summary>
-        public static bool IsRunningFromRemovable()
-        {
 
         /// <summary>
         /// Determines if the application is running from a removable or CD-ROM drive.
