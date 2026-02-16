@@ -13,6 +13,13 @@ namespace antivirus
             // MBR check before scanning
             if (OperatingSystem.IsWindows())
             {
+                if (!MBRChecker.IsRunningAsAdministrator())
+                {
+                    Console.WriteLine("This program must be run as an administrator to access the MBR.");
+                    Logger.LogWarning("Program not running as administrator.", Array.Empty<object>());
+                    return;
+                }
+
                 if (MBRChecker.IsMBRSuspicious())
                 {
                     Console.WriteLine("WARNING: Suspicious Master Boot Record detected!");

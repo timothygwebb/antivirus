@@ -31,11 +31,13 @@ namespace antivirus
         private static readonly string KmeleonUrl = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
         private static readonly string OperaUrl = "https://www.opera.com/computer/thanks?ni=stable_portable&os=windows";
 
+
         /// <summary>
         /// Downloads a file asynchronously using HttpClient.
         /// </summary>
         private static async Task DownloadFileAsync(string url, string filePath)
         {
+            using var httpClient = new HttpClient();
             using var httpClient = new HttpClient();
             using var response = await httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
@@ -219,14 +221,11 @@ namespace antivirus
                         process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) Logger.LogError($"clamd.exe error: {e.Data}", Array.Empty<object>()); };
                         process.BeginOutputReadLine();
                         process.BeginErrorReadLine();
-                        Logger.LogInfo("clamd.exe started automatically.", Array.Empty<object>());
-                        Console.WriteLine("clamd.exe started automatically.");
                     }
-                    else
-                    {
-                        Logger.LogWarning("Failed to start clamd.exe: Process.Start returned null.", Array.Empty<object>());
-                        Console.WriteLine("Failed to start clamd.exe: Process.Start returned null.");
-                    }
+                }
+                else
+                {
+                    Logger.LogWarning("ClamAV daemon is not running or executable not found.", Array.Empty<object>());
                 }
             }
         }
@@ -234,8 +233,8 @@ namespace antivirus
         /// <summary>
         /// Ensures a legacy browser is downloaded for environments lacking a modern browser.
         /// </summary>
-        public static void EnsureLegacyBrowserInstalled()
-        {
+            }
+        }
             string tempDir = Path.GetTempPath();
             string kmeleonInstaller = Path.Combine(tempDir, "K-Meleon76RC2.7z");
             string operaInstaller = Path.Combine(tempDir, "Opera_Portable.exe");
@@ -370,17 +369,11 @@ namespace antivirus
             {
                 Logger.LogResult($"File clean: {filePath}", Array.Empty<object>());
             }
-        }
-
+        {
+            try
         /// <summary>
         /// Scans a file with ClamAV via TCP and returns the result string, or null if failed.
         /// </summary>
-        private static string? ScanWithClamAV(string filePath)
-        {
-            try
-            {
-                using var client = new TcpClient("127.0.0.1", 3310);
-                using var stream = client.GetStream();
                 byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
                 stream.Write(cmd, 0, cmd.Length);
 
@@ -408,6 +401,12 @@ namespace antivirus
             catch (Exception ex)
             {
                 if (!clamAvWarned)
+                ms.Write(respBuffer, 0, respBytes);
+                return Encoding.ASCII.GetString(ms.ToArray());
+            }
+            catch (Exception ex)
+            {
+                if (!clamAvWarned)
                 {
                     Logger.LogWarning($"ClamAV scan failed: {ex.Message}", Array.Empty<object>());
                     clamAvWarned = true;
@@ -429,6 +428,12 @@ namespace antivirus
                 Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
                 ScanDirectorySafe(input);
             }
+            Definitions.LoadDefinitions();
+            if (Directory.Exists(input))
+            {
+                Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
+                ScanDirectorySafe(input);
+            }
             else if (File.Exists(input))
             {
                 if (!ShouldSkipFile(input))
@@ -442,6 +447,12 @@ namespace antivirus
             }
             Logger.LogInfo("Scanning finished", Array.Empty<object>());
         }
+
+        /// <summary>
+        /// Determines if the application is running from a removable or CD-ROM drive.
+        /// </summary>
+        public static bool IsRunningFromRemovable()
+        {
 
         /// <summary>
         /// Determines if the application is running from a removable or CD-ROM drive.
