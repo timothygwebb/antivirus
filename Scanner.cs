@@ -372,8 +372,12 @@ namespace antivirus
         /// </summary>
         public static bool IsRunningFromRemovable()
         {
-            string rootPath = Path.GetPathRoot(Directory.GetCurrentDirectory());
-            if (string.IsNullOrEmpty(rootPath)) return false;
+            string? rootPath = Path.GetPathRoot(Directory.GetCurrentDirectory());
+            if (string.IsNullOrEmpty(rootPath))
+            {
+                Logger.LogWarning("Root path is null or empty.", Array.Empty<object>());
+                return false;
+            }
 
             DriveInfo driveInfo = new(rootPath);
             return driveInfo.DriveType == DriveType.Removable;

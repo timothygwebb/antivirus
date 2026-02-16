@@ -10,12 +10,32 @@ namespace antivirus
         Result
     }
 
-    public class Logger : ILogger
+    public static class Logger
     {
         private static readonly string LogFilePath = Path.Combine(Directory.GetCurrentDirectory(), "antivirus.log");
         private static bool logPathPrinted = false;
 
-        public static void LogMessage(LogLevel level, string format, object[] args)
+        public static void LogInfo(string format, object[] args)
+        {
+            LogMessage(LogLevel.Info, format, args);
+        }
+
+        public static void LogWarning(string format, object[] args)
+        {
+            LogMessage(LogLevel.Warning, format, args);
+        }
+
+        public static void LogError(string format, object[] args)
+        {
+            LogMessage(LogLevel.Error, format, args);
+        }
+
+        public static void LogResult(string format, object[] args)
+        {
+            LogMessage(LogLevel.Result, format, args);
+        }
+
+        private static void LogMessage(LogLevel level, string format, object[] args)
         {
             string message;
             if (args != null && args.Length > 0)
@@ -48,26 +68,6 @@ namespace antivirus
             {
                 System.Console.WriteLine($"Failed to write to log file: {ex.Message}");
             }
-        }
-
-        public void LogInfo(string format, object[] args)
-        {
-            LogMessage(LogLevel.Info, format, args);
-        }
-
-        public void LogWarning(string format, object[] args)
-        {
-            LogMessage(LogLevel.Warning, format, args);
-        }
-
-        public void LogError(string format, object[] args)
-        {
-            LogMessage(LogLevel.Error, format, args);
-        }
-
-        public void LogResult(string format, object[] args)
-        {
-            LogMessage(LogLevel.Result, format, args);
         }
     }
 }
