@@ -16,8 +16,8 @@ namespace antivirus
 
         public static void DownloadDefinitions()
         {
-            Console.WriteLine("ClamAV definitions download failed. Please manually download main.cvd, daily.cvd, and bytecode.cvd from https://www.clamav.net/downloads and place them in the ClamAV directory.");
-            Logger.LogError("ClamAV definitions download failed. Please manually download main.cvd, daily.cvd, and bytecode.cvd from https://www.clamav.net/downloads and place them in the ClamAV directory.", Array.Empty<object>());
+            Console.WriteLine("ClamAV definitions download failed. Please manually download main.cvd/.cld, daily.cvd/.cld, and bytecode.cvd/.cld from https://www.clamav.net/downloads and place them in the ClamAV directory.");
+            Logger.LogError("ClamAV definitions download failed. Please manually download main.cvd/.cld, daily.cvd/.cld, and bytecode.cvd/.cld from https://www.clamav.net/downloads and place them in the ClamAV directory.", Array.Empty<object>());
         }
 
         public static bool DefinitionsExist()

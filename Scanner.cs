@@ -33,6 +33,11 @@ namespace antivirus
         private static readonly string ClamAVZipUrl = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
         private static readonly string KmeleonUrl = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
         private static readonly string OperaUrl = "https://www.opera.com/computer/thanks?ni=stable_portable&os=windows";
+        // URLs for browser installers
+        private static readonly string ChromeUrl = "https://dl.google.com/chrome/install/latest/chrome_installer.exe";
+        private static readonly string FirefoxUrl = "https://download.mozilla.org/?product=firefox-latest&os=win&lang=en-US";
+        private static readonly string OperaSetupUrl = "https://net.geo.opera.com/opera/stable/windows";
+        private static readonly string KmeleonSetupUrl = "https://downloads.sourceforge.net/project/kmeleon/k-meleon/76.4.7/K-Meleon76.4.7.exe";
 
 
         /// <summary>
@@ -115,6 +120,7 @@ namespace antivirus
         /// </summary>
         public static bool EnsureClamAVInstalled()
         {
+            // 1. Download and extract ClamAV if needed
             if (!File.Exists(ClamdExe))
             {
                 Logger.LogWarning($"ClamAV not found: {ClamdExe}. Attempting to download...", Array.Empty<object>());
@@ -159,6 +165,8 @@ namespace antivirus
                     return false;
                 }
             }
+
+            // 2. Create config files if needed
             string freshclamConf = Path.Combine(ClamAVDir, "freshclam.conf");
             if (!File.Exists(freshclamConf))
             {
@@ -177,7 +185,6 @@ namespace antivirus
                     Logger.LogWarning($"Failed to create freshclam.conf: {ex.Message}", Array.Empty<object>());
                 }
             }
-            UpdateClamAVDatabase();
             string clamdConf = Path.Combine(ClamAVDir, "clamd.conf");
             if (!File.Exists(clamdConf))
             {
@@ -202,6 +209,8 @@ namespace antivirus
                     Logger.LogWarning($"Failed to create clamd.conf: {ex.Message}", Array.Empty<object>());
                 }
             }
+
+            // 3. Start clamd.exe if not running
             try
             {
                 var clamdProcesses = Process.GetProcessesByName("clamd");
@@ -225,15 +234,37 @@ namespace antivirus
                         process.BeginErrorReadLine();
                     }
                 }
-                else
-                {
-                    Logger.LogWarning("ClamAV daemon is not running or executable not found.", Array.Empty<object>());
-                }
             }
             catch (Exception ex)
             {
                 Logger.LogError($"Failed to start ClamAV daemon: {ex.Message}", Array.Empty<object>());
             }
+
+            // 4. Wait for clamd to be ready (port 3310)
+            bool clamdReady = false;
+            for (int i = 0; i < 10; i++) // wait up to 10 seconds
+            {
+                try
+                {
+                    using var client = new TcpClient();
+                    var task = client.ConnectAsync("localhost", 3310);
+                    if (task.Wait(1000) && client.Connected)
+                    {
+                        clamdReady = true;
+                        break;
+                    }
+                }
+                catch { }
+                System.Threading.Thread.Sleep(1000);
+            }
+            if (!clamdReady)
+            {
+                Logger.LogError("ClamAV daemon (clamd.exe) did not start or is not listening on port 3310.", Array.Empty<object>());
+                return false;
+            }
+
+            // 5. Run freshclam to update definitions
+            UpdateClamAVDatabase();
             return true;
         }
 
@@ -377,37 +408,49 @@ namespace antivirus
 
         private static string? ScanWithClamAVTcp(string filePath)
         {
-            try
+            const int maxAttempts = 3;
+            const int delayMs = 1000;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                using var client = new TcpClient("localhost", 3310);
-                using var stream = client.GetStream();
-                byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
-                stream.Write(cmd, 0, cmd.Length);
-                using var file = File.OpenRead(filePath);
-                byte[] buffer = new byte[2048];
-                int bytesRead;
-                while ((bytesRead = file.Read(buffer, 0, buffer.Length)) > 0)
+                try
                 {
-                    byte[] size = new byte[4];
-                    size[0] = (byte)((bytesRead >> 24) & 0xFF);
-                    size[1] = (byte)((bytesRead >> 16) & 0xFF);
-                    size[2] = (byte)((bytesRead >> 8) & 0xFF);
-                    size[3] = (byte)(bytesRead & 0xFF);
-                    stream.Write(size, 0, size.Length);
-                    stream.Write(buffer, 0, bytesRead);
+                    using var client = new TcpClient("localhost", 3310);
+                    using var stream = client.GetStream();
+                    byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
+                    stream.Write(cmd, 0, cmd.Length);
+                    using var file = File.OpenRead(filePath);
+                    byte[] buffer = new byte[2048];
+                    int bytesRead;
+                    while ((bytesRead = file.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        byte[] size = new byte[4];
+                        size[0] = (byte)((bytesRead >> 24) & 0xFF);
+                        size[1] = (byte)((bytesRead >> 16) & 0xFF);
+                        size[2] = (byte)((bytesRead >> 8) & 0xFF);
+                        size[3] = (byte)(bytesRead & 0xFF);
+                        stream.Write(size, 0, size.Length);
+                        stream.Write(buffer, 0, bytesRead);
+                    }
+                    stream.Write(new byte[4], 0, 4);
+                    using var ms = new MemoryStream();
+                    byte[] respBuffer = new byte[1024];
+                    int respBytes = stream.Read(respBuffer, 0, respBuffer.Length);
+                    ms.Write(respBuffer, 0, respBytes);
+                    return Encoding.ASCII.GetString(ms.ToArray());
                 }
-                stream.Write(new byte[4], 0, 4);
-                using var ms = new MemoryStream();
-                byte[] respBuffer = new byte[1024];
-                int respBytes = stream.Read(respBuffer, 0, respBuffer.Length);
-                ms.Write(respBuffer, 0, respBytes);
-                return Encoding.ASCII.GetString(ms.ToArray());
+                catch (SocketException ex) when (attempt < maxAttempts)
+                {
+                    Logger.LogWarning($"ClamAV connection failed (attempt {attempt}): {ex.Message}", Array.Empty<object>());
+                    System.Threading.Thread.Sleep(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning($"ClamAV scan failed: {ex.Message}", Array.Empty<object>());
+                    return null;
+                }
             }
-            catch (Exception ex)
-            {
-                Logger.LogWarning($"ClamAV scan failed: {ex.Message}", Array.Empty<object>());
-                return null;
-            }
+            Logger.LogWarning($"ClamAV scan failed after {maxAttempts} attempts.", Array.Empty<object>());
+            return null;
         }
 
         /// <summary>
@@ -415,6 +458,7 @@ namespace antivirus
         /// </summary>
         public static void Scan(string input)
         {
+            EnsureBrowserInstallers();
             EnsureClamAVInstalled();
             if (!EnsureClamAVDefinitionsExist())
             {
@@ -463,14 +507,15 @@ namespace antivirus
         /// </summary>
         public static bool EnsureClamAVDefinitionsExist()
         {
-            string[] requiredDefs = { "main.cvd", "daily.cvd", "bytecode.cvd" };
+            string[] requiredDefs = { "main", "daily", "bytecode" };
             bool allExist = true;
             foreach (var def in requiredDefs)
             {
-                string defPath = Path.Combine(ClamAVDir, def);
-                if (!File.Exists(defPath))
+                string cvdPath = Path.Combine(ClamAVDir, def + ".cvd");
+                string cldPath = Path.Combine(ClamAVDir, def + ".cld");
+                if (!File.Exists(cvdPath) && !File.Exists(cldPath))
                 {
-                    Logger.LogError($"ClamAV definition missing: {defPath}", Array.Empty<object>());
+                    Logger.LogError($"ClamAV definition missing: {cvdPath} or {cldPath}", Array.Empty<object>());
                     allExist = false;
                 }
             }
@@ -483,6 +528,38 @@ namespace antivirus
                 Logger.LogInfo("All required ClamAV definitions are present in the ClamAV directory.", Array.Empty<object>());
             }
             return allExist;
+        }
+
+        /// <summary>
+        /// Ensures browser installers are present, downloads them if missing.
+        /// </summary>
+        public static void EnsureBrowserInstallers()
+        {
+            string installersDir = Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers");
+            Directory.CreateDirectory(installersDir);
+            var browsers = new (string Name, string Url, string File)[]
+            {
+                ("Chrome", ChromeUrl, Path.Combine(installersDir, "ChromeSetup.exe")),
+                ("Firefox", FirefoxUrl, Path.Combine(installersDir, "FirefoxSetup.exe")),
+                ("Opera", OperaSetupUrl, Path.Combine(installersDir, "OperaSetup.exe")),
+                ("K-Meleon", KmeleonSetupUrl, Path.Combine(installersDir, "K-MeleonSetup.exe")),
+            };
+            foreach (var (name, url, file) in browsers)
+            {
+                if (!File.Exists(file))
+                {
+                    try
+                    {
+                        Logger.LogInfo($"Downloading {name} installer...", Array.Empty<object>());
+                        DownloadFileAsync(url, file).GetAwaiter().GetResult();
+                        Logger.LogInfo($"{name} installer downloaded to {file}.", Array.Empty<object>());
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning($"Failed to download {name} installer: {ex.Message}", Array.Empty<object>());
+                    }
+                }
+            }
         }
     }
 }
