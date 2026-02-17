@@ -11,52 +11,109 @@ namespace antivirus
         static void Main(string[] _)
         {
             Console.WriteLine("Program execution started.");
+            Logger.LogInfo("Program started", Array.Empty<object>());
+
+            // Dual OS compatibility: use legacy code if on Windows Me or similar
+            if (IsLegacyWindows())
+            {
+                Logger.LogInfo("Running in legacy compatibility mode.", Array.Empty<object>());
+                // Call legacy entry point if available
+                try
+                {
+                    var legacyType = Type.GetType("antivirus.Program_Backup");
+                    var legacyMain = legacyType?.GetMethod("Main");
+                    legacyMain?.Invoke(null, new object[] { new string[0] });
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Failed to invoke legacy entry point: " + ex.Message, Array.Empty<object>());
+                }
+                return;
+            }
 
             try
             {
-                Logger.LogInfo("Program started", new object[0]);
+            // 1. MBR check and cleanse (prompt user)
+            Logger.LogInfo("Checking for MBR infections...", Array.Empty<object>());
+            if (MBRChecker.IsMBRSuspicious())
+            {
+                Logger.LogWarning("Suspicious MBR detected!", Array.Empty<object>());
+                Console.WriteLine("Suspicious MBR detected! Attempt to cleanse? (y/n): ");
+                var resp = Console.ReadLine();
+                if (resp != null && resp.Trim().ToLower().StartsWith("y"))
+                {
+                    if (MBRChecker.CleanseMBR())
+                    {
+                        Logger.LogInfo("MBR cleansed successfully.", Array.Empty<object>());
+                        Console.WriteLine("MBR cleansed successfully.");
+                    }
+                    else
+                    {
+                        Logger.LogError("Failed to cleanse MBR.", Array.Empty<object>());
+                        Console.WriteLine("Failed to cleanse MBR.");
+                    }
+                }
+            }
+            else
+            {
+                Logger.LogInfo("No suspicious MBR detected.", Array.Empty<object>());
+            }
 
-                // Ensure ClamAV is installed and configured
+                // 2. Ensure ClamAV is installed
                 if (!Scanner.EnsureClamAVInstalled())
                 {
-                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", new object[0]);
+                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
                     Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
-                    Logger.LogInfo("Program finished", new object[0]);
+                    Logger.LogInfo("Program finished", Array.Empty<object>());
                     Console.WriteLine("Scan complete. Press Enter to exit...");
                     Console.ReadLine();
                     return;
                 }
 
-                // Simplified execution flow for testing
-                Console.WriteLine("Enter a file or directory path to scan. Press Enter to use the default user profile directory:");
-                string defaultPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal); // Changed to Personal for compatibility
-                string input = Console.ReadLine();
+            // 3. Ensure ClamAV definitions are present and up-to-date
+            ClamAVDefinitionsManager.EnsureDefinitionsUpToDate();
+            if (!ClamAVDefinitionsManager.DefinitionsExist())
+            {
+                Logger.LogError("ClamAV definitions are missing. Program cannot proceed.", Array.Empty<object>());
+                Console.WriteLine("ClamAV definitions are missing. Program cannot proceed.");
+                Logger.LogInfo("Program finished", Array.Empty<object>());
+                Console.WriteLine("Scan complete. Press Enter to exit...");
+                Console.ReadLine();
+                return;
+            }
 
+                // 4. Get scan path
+                Console.WriteLine("Enter a file or directory path to scan. Press Enter to use the default user profile directory:");
+                string defaultPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+                string input = Console.ReadLine();
                 if (string.IsNullOrEmpty(input))
                 {
                     input = defaultPath;
-                    Logger.LogInfo("Using default path: " + defaultPath, new object[0]);
+                    Logger.LogInfo("Using default path: " + defaultPath, Array.Empty<object>());
                 }
-
-
-                Logger.LogInfo("Starting scan for path: " + input, new object[0]);
+                Logger.LogInfo("Starting scan for path: " + input, Array.Empty<object>());
                 Console.WriteLine("Scanning path: " + input);
 
-
-                // Advanced scan (ClamAV, heuristics, exclusions, browser recovery, quarantine)
+                // 5. Scan for malware
                 Scanner.Scan(input);
 
-                // Browser repair/recovery
+                // 6. Browser repair/recovery
                 BrowserRepair.RepairBrowsers();
 
-                Logger.LogInfo("Program finished", new object[0]);
+                Logger.LogInfo("Program finished", Array.Empty<object>());
                 Console.WriteLine("Scan complete. Press Enter to exit...");
                 Console.ReadLine();
             }
             catch (Exception ex)
             {
-                Logger.LogError("An error occurred: " + ex.Message, new object[0]);
+                Logger.LogError("An error occurred: " + ex.Message, Array.Empty<object>());
             }
+        }
+
+        private static bool IsLegacyWindows()
+        {
+            var os = Environment.OSVersion;
+            return os.Platform == PlatformID.Win32Windows && (os.Version.Major < 5); // Windows Me/98/95
         }
     }
 }

@@ -74,30 +74,70 @@ namespace antivirus
 
         public static void Scan(string path)
         {
-            int port = 3310; // Example port for ClamAV
+            int port = 3310;
             AddFirewallRules(port);
-            InitializeDualStackSocket(port);
             Console.WriteLine("Scanning path: " + path);
             Logger.LogInfo("Scanning path: " + path, Array.Empty<object>());
-            // Example IP address parsing
-            string ipStr = "::1"; // IPv6 loopback
-            var ip = System.Net.IPAddress.Parse(ipStr);
-            Logger.LogInfo($"Parsed IP address: {ip}", Array.Empty<object>());
+
+            // Try to connect to ClamAV (both IPv4 and IPv6)
+            using var client = TryConnectClamAV(port);
+            if (client == null)
+            {
+                Logger.LogError("Could not connect to ClamAV daemon for scanning.", Array.Empty<object>());
+                return;
+            }
+            // You can now use 'client' to send scan commands/files to ClamAV
+            // ... (your scanning logic here)
         }
 
         public static bool EnsureClamAVInstalled()
         {
-            // Check if ClamAV is installed by verifying the presence of its executable
             string clamAVPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ClamAV", "clamscan.exe");
+            string clamdPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ClamAV", "clamd.exe");
+            var files = Directory.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ClamAV"))
+                ? Directory.GetFiles(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ClamAV"), "*", SearchOption.AllDirectories)
+                : Array.Empty<string>();
+            foreach (var file in files)
+                Logger.LogInfo($"ClamAV directory contains: {file}", Array.Empty<object>());
+
             if (File.Exists(clamAVPath))
             {
-                Logger.LogInfo("ClamAV is installed.", Array.Empty<object>());
+                Logger.LogInfo("ClamAV is installed (clamscan.exe found).", Array.Empty<object>());
+                return true;
+            }
+            else if (File.Exists(clamdPath))
+            {
+                Logger.LogInfo("ClamAV is installed (clamd.exe found, clamscan.exe missing).", Array.Empty<object>());
+                Logger.LogWarning("clamscan.exe not found. You may need to use clamd.exe or download a Windows build that includes clamscan.exe.", Array.Empty<object>());
                 return true;
             }
             else
             {
-                Logger.LogError("ClamAV is not installed.", Array.Empty<object>());
-                return false;
+                Logger.LogWarning("ClamAV executables not found. Attempting to download and extract ClamAV...", Array.Empty<object>());
+                DownloadClamAVZip();
+                // Re-check after extraction
+                files = Directory.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ClamAV"))
+                    ? Directory.GetFiles(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ClamAV"), "*", SearchOption.AllDirectories)
+                    : Array.Empty<string>();
+                foreach (var file in files)
+                    Logger.LogInfo($"ClamAV directory contains: {file}", Array.Empty<object>());
+                if (File.Exists(clamAVPath))
+                {
+                    Logger.LogInfo("ClamAV is installed (clamscan.exe found after extraction).", Array.Empty<object>());
+                    return true;
+                }
+                else if (File.Exists(clamdPath))
+                {
+                    Logger.LogInfo("ClamAV is installed (clamd.exe found after extraction, clamscan.exe missing).", Array.Empty<object>());
+                    Logger.LogWarning("clamscan.exe not found. You may need to use clamd.exe or download a Windows build that includes clamscan.exe.", Array.Empty<object>());
+                    return true;
+                }
+                else
+                {
+                    Logger.LogError("ClamAV is not installed. No clamscan.exe or clamd.exe found in ClamAV directory after extraction.", Array.Empty<object>());
+                    Logger.LogError("Files present in ClamAV directory are listed above. If clamscan.exe is missing, download a Windows build that includes it (e.g., from ClamWin: https://github.com/clamwin/clamwin/releases) or adjust your configuration.", Array.Empty<object>());
+                    return false;
+                }
             }
         }
 
@@ -118,48 +158,58 @@ namespace antivirus
         {
             try
             {
-                string url = "https://www.clamav.net/downloads/production/clamav-win-x64.zip";
-                string destinationPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ClamAV.zip");
+                // Use ClamWin portable as a working Windows binary source
+                string url = "https://downloads.sourceforge.net/project/clamwin/clamwin/0.103.2/clamwin-portable-0.103.2-setup.exe";
+                string destinationPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "clamwin-portable-setup.exe");
                 string extractPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ClamAV");
 
-                using var httpClient = new System.Net.Http.HttpClient();
-                using var response = httpClient.GetAsync(url).Result;
-                response.EnsureSuccessStatusCode();
-                using var fs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-                response.Content.CopyToAsync(fs).Wait();
-                Logger.LogInfo("ClamAV zip downloaded successfully.", Array.Empty<object>());
-
-                // Extract zip
-                if (File.Exists(destinationPath))
+                // Always delete and recreate ClamAV directory for a clean state, with retry logic
+                if (Directory.Exists(extractPath))
                 {
-                    if (!Directory.Exists(extractPath))
-                        Directory.CreateDirectory(extractPath);
-                    ZipFile.ExtractToDirectory(destinationPath, extractPath, true);
-                    Logger.LogInfo("ClamAV zip extracted successfully.", Array.Empty<object>());
-
-                    // Log all extracted files for troubleshooting
-                    var allFiles = Directory.GetFiles(extractPath, "*", SearchOption.AllDirectories);
-                    foreach (var file in allFiles)
-                        Logger.LogInfo($"Extracted file: {file}", Array.Empty<object>());
-
-                    // Move clamscan.exe to ClamAV directory if found
-                    string[] files = Directory.GetFiles(extractPath, "clamscan.exe", SearchOption.AllDirectories);
-                    if (files.Length > 0)
+                    const int maxAttempts = 5;
+                    int attempt = 0;
+                    bool deleted = false;
+                    while (attempt < maxAttempts && !deleted)
                     {
-                        string targetPath = Path.Combine(extractPath, "clamscan.exe");
-                        if (!File.Exists(targetPath))
-                            File.Copy(files[0], targetPath, true);
-                        Logger.LogInfo($"clamscan.exe placed in ClamAV directory: {targetPath}", Array.Empty<object>());
+                        try
+                        {
+                            Directory.Delete(extractPath, true);
+                            Logger.LogInfo($"Deleted existing ClamAV directory: {extractPath}", Array.Empty<object>());
+                            deleted = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            attempt++;
+                            Logger.LogWarning($"Attempt {attempt} to delete ClamAV directory failed: {ex.Message}", Array.Empty<object>());
+                            System.Threading.Thread.Sleep(500); // Wait before retry
+                        }
                     }
-                    else
+                    if (!deleted)
                     {
-                        Logger.LogError("clamscan.exe not found after extraction. Check extracted files above.", Array.Empty<object>());
+                        Logger.LogError($"Failed to delete ClamAV directory after {maxAttempts} attempts. Please close any programs using files in this directory and try again.", Array.Empty<object>());
+                        return;
                     }
                 }
+                Directory.CreateDirectory(extractPath);
+
+                using (var httpClient = new System.Net.Http.HttpClient())
+                using (var response = httpClient.GetAsync(url).Result)
+                {
+                    response.EnsureSuccessStatusCode();
+                    using (var fs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        response.Content.CopyToAsync(fs).Wait();
+                    }
+                }
+                Logger.LogInfo("ClamWin portable setup downloaded successfully.", Array.Empty<object>());
+
+                // Extraction of .exe installer is not supported natively; instruct user
+                Logger.LogError("Automatic extraction of ClamWin portable setup is not supported. Please manually run the installer and copy clamd.exe and/or clamscan.exe to the ClamAV directory.", Array.Empty<object>());
+                Logger.LogError("Download ClamWin portable from https://github.com/clamwin/clamwin/releases or https://clamwin.com/ if the above link is broken.", Array.Empty<object>());
             }
             catch (Exception ex)
             {
-                Logger.LogError("Failed to download or extract ClamAV zip: " + ex.Message, Array.Empty<object>());
+                Logger.LogError("Failed to download ClamWin portable setup: " + ex.Message, Array.Empty<object>());
             }
         }
     }
