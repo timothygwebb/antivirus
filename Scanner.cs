@@ -492,23 +492,14 @@ namespace antivirus
         /// </summary>
         public static bool Scan(string input)
         {
-            // Ensure browser installers are downloaded only once
-            lock (BrowserInstallersLock)
-            {
-                if (!BrowserInstallersInitialized)
-                {
-                    EnsureBrowserInstallers();
-                    BrowserInstallersInitialized = true;
-                }
-            }
             // Only attempt installation/initialization if not already done
             if (!ClamAVInitialized)
             {
                 if (!EnsureClamAVInstalled())
                 {
-                Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
-                Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
-                return false;
+                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
+                    Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
+                    return false;
                 }
             }
             if (!IsClamAVDaemonReady())
@@ -571,7 +562,7 @@ namespace antivirus
             {
                 using var client = new TcpClient();
                 var task = client.ConnectAsync("localhost", 3310);
-                if (task.Wait(1000) && client.Connected)
+                if (task.Wait(5000) && client.Connected) // Increased timeout to 5 seconds
                     return true;
             }
             catch { }

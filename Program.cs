@@ -1,9 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net;
 using antivirus;
-
 
 namespace antivirus
 {
@@ -13,6 +11,15 @@ namespace antivirus
         {
             Console.WriteLine("Program execution started.");
             Logger.LogInfo("Program started", Array.Empty<object>());
+
+            // Check if the program is launched with the --browser-repair argument
+            if (args.Length > 0 && args[0] == "--browser-repair")
+            {
+                Logger.LogInfo("Executing browser repair process.", Array.Empty<object>());
+                BrowserRepair.RepairBrowsers();
+                Logger.LogInfo("Browser repair process completed.", Array.Empty<object>());
+                return;
+            }
 
             // Dual OS compatibility: use legacy code if on Windows Me or similar
             if (IsLegacyWindows())
