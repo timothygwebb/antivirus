@@ -20,8 +20,6 @@
     <ProjectReference Include="..\antivirus.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Using Include="Xunit" />
-  </ItemGroup>
+  <!-- Removed unnecessary Using Include for Xunit -->
 
 </Project>

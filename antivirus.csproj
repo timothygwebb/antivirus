@@ -5,6 +5,10 @@
     <RootNamespace>antivirus</RootNamespace>
     <AssemblyName>antivirus</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.assert" Version="2.5.3" />
+    <PackageReference Include="xunit.extensibility.core" Version="2.5.3" />
+  </ItemGroup>
   <!-- Removed invalid ProjectReference to legacy project -->
   <!-- Removed explicit Compile Include to avoid duplicate items -->
 </Project>
