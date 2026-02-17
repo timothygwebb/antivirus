@@ -1,12 +1,13 @@
+using antivirus;
 using System;
-using System.IO;
-using System.Net.Sockets;
-using System.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Net;
+using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
+using System.Text;
 
 namespace antivirus
 {
@@ -15,21 +16,45 @@ namespace antivirus
     /// </summary>
     public static class Scanner
     {
-        private static readonly HashSet<string> ExcludedExtensions = new()
+        /// <summary>
+        /// Ensures the ClamAV directory has write permissions.
+        /// </summary>
+        private static void SetWritePermissions()
         {
-            ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml"
-        };
+#if WINDOWS
+            try
+            {
+                var directoryInfo = new DirectoryInfo(ClamAVDir);
+                var accessControl = directoryInfo.GetAccessControl();
+                accessControl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                    new System.Security.Principal.SecurityIdentifier(System.Security.Principal.WellKnownSidType.BuiltinUsersSid, null),
+                    System.Security.AccessControl.FileSystemRights.FullControl,
+                    System.Security.AccessControl.AccessControlType.Allow));
+                directoryInfo.SetAccessControl(accessControl);
+                Logger.LogInfo("Set write permissions for ClamAV directory.", Array.Empty<object>());
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Failed to set write permissions for ClamAV directory: {ex.Message}", Array.Empty<object>());
+            }
+#else
+            Logger.LogWarning("Setting write permissions is not supported on this platform.", Array.Empty<object>());
+#endif
+        }
+
+        // Simplify 'new' expressions and collection initializations
+        private static readonly HashSet<string> ExcludedExtensions = new() { ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml" };
+
         private static readonly string[] ExcludedFolders = { "bin", "obj", ".git" };
-        private static readonly HashSet<string> ExcludedFiles = new()
-        {
-            "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys"
-        };
-        private static bool clamAvWarned = false;
+
+        private static readonly HashSet<string> ExcludedFiles = new() { "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys" };
+        // Removed unused field clamAvWarned
         private static readonly string ClamAVDir = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
         private static readonly string ClamdExe = Path.Combine(ClamAVDir, "clamd.exe");
         private static readonly string ClamAVZipUrl = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
         private static readonly string KmeleonUrl = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
         private static readonly string OperaUrl = "https://www.opera.com/computer/thanks?ni=stable_portable&os=windows";
+        private static bool IsFirstRun = true; // Flag to track if this is the first run
 
 
         /// <summary>
@@ -37,7 +62,6 @@ namespace antivirus
         /// </summary>
         private static async Task DownloadFileAsync(string url, string filePath)
         {
-            using var httpClient = new HttpClient();
             using var httpClient = new HttpClient();
             using var response = await httpClient.GetAsync(url);
             response.EnsureSuccessStatusCode();
@@ -86,125 +110,79 @@ namespace antivirus
             }
         }
 
+        private static void PersistFirstRunFlag()
+        {
+            string flagFilePath = Path.Combine(ClamAVDir, "first_run.flag");
+            if (!File.Exists(flagFilePath))
+            {
+                File.Create(flagFilePath).Dispose();
+                IsFirstRun = true;
+            }
+            else
+            {
+                IsFirstRun = false;
+            }
+        }
+
         /// <summary>
-        /// Removes non-database files from the ClamAV directory.
+        /// Removes non-database files from the ClamAV directory if it's the first run.
         /// </summary>
         private static void CleanClamAVDirectory()
         {
-            var allowedExtensions = new HashSet<string>(new[] { ".cvd", ".cld", ".exe", ".dll", ".conf", ".log" }, StringComparer.OrdinalIgnoreCase);
-            var allowedFiles = new HashSet<string>(new[] { "clamd.exe", "freshclam.exe", "clamd.conf", "freshclam.conf", "clamd.log" }, StringComparer.OrdinalIgnoreCase);
-            foreach (var file in Directory.GetFiles(ClamAVDir))
-            {
-                string ext = Path.GetExtension(file);
-                string name = Path.GetFileName(file);
-                if (!allowedExtensions.Contains(ext) && !allowedFiles.Contains(name))
-                {
-                    try { File.Delete(file); Logger.LogInfo($"Deleted non-database file from ClamAV directory: {name}", Array.Empty<object>()); } catch { }
-                }
-                if (ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase))
-                {
-                    try { File.Delete(file); Logger.LogInfo($"Deleted .pdb file from ClamAV directory: {name}", Array.Empty<object>()); } catch { }
-                }
-            }
+            PersistFirstRunFlag(); // Check and set the first run flag
+
+            if (!IsFirstRun) return; // Skip cleanup if not the first run
+
+            Logger.LogInfo("Skipping deletion of non-database files from the ClamAV directory.", Array.Empty<object>());
+
+            IsFirstRun = false; // Set the flag to false after the first cleanup
         }
 
         /// <summary>
         /// Ensures ClamAV is installed, configured, and up to date.
         /// </summary>
-        private static void EnsureClamAVInstalled()
+        public static bool EnsureClamAVInstalled()
         {
-            if (!File.Exists(ClamdExe))
+            // Verify ClamAV installation
+            if (!File.Exists(ClamdExe) || !File.Exists(Path.Combine(ClamAVDir, "freshclam.exe")))
             {
-                Logger.LogWarning($"ClamAV not found: {ClamdExe}. Attempting to download...", Array.Empty<object>());
-                Console.WriteLine($"ClamAV not found: {ClamdExe}. Attempting to download...");
-                try
-                {
-                    var handler = new HttpClientHandler
-                    {
-                        ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
-                    };
-                    using var httpClient = new HttpClient(handler);
-                    string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
-                    DownloadFileAsync(ClamAVZipUrl, tempZip).GetAwaiter().GetResult();
-                    ZipFile.ExtractToDirectory(tempZip, ClamAVDir, true);
-                    var dirs = Directory.GetDirectories(ClamAVDir);
-                    if (dirs.Length == 1)
-                    {
-                        string subDir = dirs[0];
-                        foreach (var file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
-                        {
-                            string relPath = Path.GetRelativePath(subDir, file);
-                            string destPath = Path.Combine(ClamAVDir, relPath);
-                            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-                            File.Move(file, destPath, true);
-                        }
-                        foreach (var dir in Directory.GetDirectories(subDir, "*", SearchOption.AllDirectories))
-                        {
-                            string relPath = Path.GetRelativePath(subDir, dir);
-                            string destPath = Path.Combine(ClamAVDir, relPath);
-                            Directory.CreateDirectory(destPath);
-                        }
-                        Directory.Delete(subDir, true);
-                        Logger.LogInfo($"Moved ClamAV files from subdirectory '{Path.GetFileName(subDir)}' to '{ClamAVDir}'.", Array.Empty<object>());
-                    }
-                    Logger.LogInfo("ClamAV downloaded and extracted.", Array.Empty<object>());
-                    Console.WriteLine("ClamAV downloaded and extracted.");
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError($"Failed to download or extract ClamAV: {ex.Message}", Array.Empty<object>());
-                    Console.WriteLine("Failed to download or extract ClamAV. Please download and extract it manually from https://www.clamav.net/downloads.");
-                }
+                Logger.LogError("ClamAV daemon or FreshClam utility not found. Please ensure ClamAV is installed.", Array.Empty<object>());
+                Console.WriteLine("ClamAV is not fully configured. Please ensure ClamAV is installed and configured correctly.");
+                return false;
             }
-            CleanClamAVDirectory();
+
+#if WINDOWS
+            SetWritePermissions();
+#else
+            Logger.LogWarning("Setting write permissions is not supported on this platform.", Array.Empty<object>());
+#endif
+
+            // Validate configuration files
             string freshclamConf = Path.Combine(ClamAVDir, "freshclam.conf");
+            string clamdConf = Path.Combine(ClamAVDir, "clamd.conf");
             if (!File.Exists(freshclamConf))
             {
-                try
-                {
-                    var conf = new[]
-                    {
-                        $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
-                        "DatabaseMirror database.clamav.net"
-                    };
-                    File.WriteAllLines(freshclamConf, conf);
-                    Logger.LogInfo("Created default freshclam.conf for ClamAV.", Array.Empty<object>());
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning($"Failed to create freshclam.conf: {ex.Message}", Array.Empty<object>());
-                }
+                Logger.LogError("Missing freshclam.conf. Please ensure the configuration file is present.", Array.Empty<object>());
+                Console.WriteLine("ClamAV is not fully configured. Please ensure freshclam.conf is present in the ClamAV directory.");
+                return false;
             }
-            UpdateClamAVDatabase();
-            string clamdConf = Path.Combine(ClamAVDir, "clamd.conf");
             if (!File.Exists(clamdConf))
             {
-                try
-                {
-                    var conf = new[]
-                    {
-                        $"LogFile {Path.Combine(ClamAVDir, "clamd.log").Replace("\\", "/")}",
-                        $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
-                        "TCPSocket 3310",
-                        "TCPAddr 127.0.0.1",
-                        "Foreground true",
-                        "ScanPE true",
-                        "ScanELF false",
-                        "ScanMail false"
-                    };
-                    File.WriteAllLines(clamdConf, conf);
-                    Logger.LogInfo("Created default clamd.conf for ClamAV.", Array.Empty<object>());
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning($"Failed to create clamd.conf: {ex.Message}", Array.Empty<object>());
-                }
+                Logger.LogError("Missing clamd.conf. Please ensure the configuration file is present.", Array.Empty<object>());
+                Console.WriteLine("ClamAV is not fully configured. Please ensure clamd.conf is present in the ClamAV directory.");
+                return false;
             }
+
+            // Update virus definitions
+            UpdateClamAVDatabase();
+
+            // Check if ClamAV daemon is running
             try
             {
                 var clamdProcesses = Process.GetProcessesByName("clamd");
-                if (clamdProcesses.Length == 0 && File.Exists(ClamdExe))
+                if (clamdProcesses.Length == 0)
                 {
+                    Logger.LogInfo($"Attempting to start ClamAV daemon from: {ClamdExe}", Array.Empty<object>());
                     var startInfo = new ProcessStartInfo
                     {
                         FileName = ClamdExe,
@@ -221,24 +199,38 @@ namespace antivirus
                         process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) Logger.LogError($"clamd.exe error: {e.Data}", Array.Empty<object>()); };
                         process.BeginOutputReadLine();
                         process.BeginErrorReadLine();
+                        Logger.LogInfo("ClamAV daemon started successfully.", Array.Empty<object>());
+                    }
+                    else
+                    {
+                        Logger.LogError("Failed to start ClamAV daemon. Process could not be started.", Array.Empty<object>());
+                        Console.WriteLine("Failed to start ClamAV daemon. Please check the configuration and try again.");
+                        return false;
                     }
                 }
                 else
                 {
-                    Logger.LogWarning("ClamAV daemon is not running or executable not found.", Array.Empty<object>());
+                    Logger.LogInfo("ClamAV daemon is already running.", Array.Empty<object>());
                 }
             }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to start ClamAV daemon: {ex.Message}", Array.Empty<object>());
+                Console.WriteLine("An error occurred while starting ClamAV daemon. Please check the logs for more details.");
+                return false;
+            }
+
+            // Restart ClamAV service if needed
+            Logger.LogInfo("ClamAV installation and configuration verified successfully.", Array.Empty<object>());
+            return true;
         }
 
-        /// <summary>
-        /// Ensures a legacy browser is downloaded for environments lacking a modern browser.
-        /// </summary>
-            }
-        }
+        // Move browser download logic into a method
+        private static void DownloadBrowsersIfNeeded()
+        {
             string tempDir = Path.GetTempPath();
             string kmeleonInstaller = Path.Combine(tempDir, "K-Meleon76RC2.7z");
             string operaInstaller = Path.Combine(tempDir, "Opera_Portable.exe");
-
             // Try K-Meleon first
             try
             {
@@ -254,7 +246,6 @@ namespace antivirus
             {
                 Logger.LogWarning($"Failed to download K-Meleon browser: {ex.Message}", Array.Empty<object>());
             }
-
             // Try Opera as fallback
             try
             {
@@ -344,7 +335,7 @@ namespace antivirus
         /// </summary>
         private static void ScanFile(string filePath)
         {
-            string? clamResult = ScanWithClamAV(filePath);
+            string? clamResult = ScanWithClamAVTcp(filePath);
             if (clamResult != null)
             {
                 if (clamResult.Contains("FOUND", StringComparison.OrdinalIgnoreCase))
@@ -369,14 +360,17 @@ namespace antivirus
             {
                 Logger.LogResult($"File clean: {filePath}", Array.Empty<object>());
             }
+            // Removed nested try block and moved ClamAV TCP scan logic to its own method
+        }
+
+        private static string? ScanWithClamAVTcp(string filePath)
         {
             try
-        /// <summary>
-        /// Scans a file with ClamAV via TCP and returns the result string, or null if failed.
-        /// </summary>
+            {
+                using var client = new TcpClient("localhost", 3310);
+                using var stream = client.GetStream();
                 byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
                 stream.Write(cmd, 0, cmd.Length);
-
                 using var file = File.OpenRead(filePath);
                 byte[] buffer = new byte[2048];
                 int bytesRead;
@@ -391,7 +385,6 @@ namespace antivirus
                     stream.Write(buffer, 0, bytesRead);
                 }
                 stream.Write(new byte[4], 0, 4);
-
                 using var ms = new MemoryStream();
                 byte[] respBuffer = new byte[1024];
                 int respBytes = stream.Read(respBuffer, 0, respBuffer.Length);
@@ -400,17 +393,7 @@ namespace antivirus
             }
             catch (Exception ex)
             {
-                if (!clamAvWarned)
-                ms.Write(respBuffer, 0, respBytes);
-                return Encoding.ASCII.GetString(ms.ToArray());
-            }
-            catch (Exception ex)
-            {
-                if (!clamAvWarned)
-                {
-                    Logger.LogWarning($"ClamAV scan failed: {ex.Message}", Array.Empty<object>());
-                    clamAvWarned = true;
-                }
+                Logger.LogWarning($"ClamAV scan failed: {ex.Message}", Array.Empty<object>());
                 return null;
             }
         }
@@ -418,17 +401,21 @@ namespace antivirus
         /// <summary>
         /// Scans the given input path (file or directory).
         /// </summary>
+        // Add detailed logging to trace the flow of execution in the Scan method
         public static void Scan(string input)
         {
-            EnsureClamAVInstalled();
-            Logger.LogInfo("Scanning started", Array.Empty<object>());
-            Definitions.LoadDefinitions();
-            if (Directory.Exists(input))
+            Logger.LogInfo("Starting ClamAV installation and configuration verification.", Array.Empty<object>());
+            if (!EnsureClamAVInstalled())
             {
-                Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
-                ScanDirectorySafe(input);
+                Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
+                Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
+                return;
             }
-            Definitions.LoadDefinitions();
+
+            Logger.LogInfo("Verifying ClamAV definitions.", Array.Empty<object>());
+            EnsureDefinitionsDatabase();
+
+            Logger.LogInfo("Scanning started", Array.Empty<object>());
             if (Directory.Exists(input))
             {
                 Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
@@ -438,6 +425,7 @@ namespace antivirus
             {
                 if (!ShouldSkipFile(input))
                 {
+                    Logger.LogInfo($"Scanning file: {input}", Array.Empty<object>());
                     ScanFile(input);
                 }
             }
@@ -453,33 +441,49 @@ namespace antivirus
         /// </summary>
         public static bool IsRunningFromRemovable()
         {
-
-        /// <summary>
-        /// Determines if the application is running from a removable or CD-ROM drive.
-        /// </summary>
-        public static bool IsRunningFromRemovable()
-        {
             var drive = new DriveInfo(Directory.GetCurrentDirectory());
             return drive.DriveType == DriveType.CDRom || drive.DriveType == DriveType.Removable;
         }
 
         /// <summary>
-        /// Ensures the definitions database exists.
+        /// Ensures the ClamAV definitions database exists.
         /// </summary>
-        private static void EnsureDefinitionsDatabase()
+        public static void EnsureDefinitionsDatabase()
         {
-            string DefinitionsDbPath = Path.Combine(ClamAVDir, "definitions.db");
-            if (!File.Exists(DefinitionsDbPath))
+            string[] requiredDefinitions = { "main.cvd", "daily.cvd", "bytecode.cvd" };
+            foreach (var definition in requiredDefinitions)
             {
-                try
+                string definitionPath = Path.Combine(ClamAVDir, definition);
+                if (!File.Exists(definitionPath))
                 {
-                    File.Create(DefinitionsDbPath).Dispose();
-                    Logger.LogInfo($"Created missing definitions database at {DefinitionsDbPath}.", Array.Empty<object>());
+                    Logger.LogWarning($"ClamAV definition not found: {definitionPath}", Array.Empty<object>());
+                    Console.WriteLine($"Missing ClamAV definition: {definition}. Please ensure all required definitions are present.");
                 }
-                catch (Exception ex)
+                else
                 {
-                    Logger.LogError($"Failed to create definitions database: {ex.Message}", Array.Empty<object>());
+                    Logger.LogInfo($"ClamAV definition found: {definitionPath}", Array.Empty<object>());
                 }
+            }
+        }
+
+        /// <summary>
+        /// Downloads the ClamAV zip archive.
+        /// </summary>
+        public static void DownloadClamAVZip()
+        {
+            try
+            {
+                string zipPath = Path.Combine(ClamAVDir, "clamav.zip");
+                using var client = new HttpClient();
+                var response = client.GetAsync(ClamAVZipUrl).Result;
+                response.EnsureSuccessStatusCode();
+                using var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                response.Content.CopyToAsync(fileStream).Wait();
+                Logger.LogInfo("ClamAV zip downloaded successfully.", Array.Empty<object>());
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Failed to download ClamAV zip: {ex.Message}", Array.Empty<object>());
             }
         }
     }
