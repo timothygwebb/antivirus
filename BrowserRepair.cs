@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+#if WINDOWS
 using Microsoft.Win32;
+#endif
 
 namespace antivirus
 {
@@ -73,6 +75,7 @@ namespace antivirus
 
         public static void FixBrowserRegistry()
         {
+#if WINDOWS
             // Chrome
             try
             {
@@ -115,6 +118,9 @@ namespace antivirus
             {
                 Logger.LogError($"Failed to fix Opera registry: {ex.Message}", Array.Empty<object>());
             }
+#else
+            Logger.LogWarning("Registry operations are not supported on this platform.", Array.Empty<object>());
+#endif
         }
     }
 }
