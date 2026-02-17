@@ -1,10 +1,11 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using antivirus;
 
 namespace antivirus
 {
-    class Program
+    public class Program
     {
         static void Main(string[] _)
         {
