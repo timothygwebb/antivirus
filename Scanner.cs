@@ -243,7 +243,34 @@ namespace antivirus
             try
             {
                 var clamdProcesses = Process.GetProcessesByName("clamd");
-                if (clamdProcesses.Length == 0 && File.Exists(ClamdExe))
+                if (clamdProcesses.Length > 0)
+                {
+                    Logger.LogInfo($"Found existing clamd.exe processes: {clamdProcesses.Length}. Attempting to use existing daemon.", Array.Empty<object>());
+                    // If existing clamd processes exist try to connect to the daemon first
+                    if (!IsClamAVDaemonReady())
+                    {
+                        Logger.LogWarning("Existing clamd.exe processes found but daemon is not responding on port 3310. Attempting to terminate existing processes and start a new daemon.", Array.Empty<object>());
+                        foreach (var p in clamdProcesses)
+                        {
+                            try
+                            {
+                                p.Kill(true);
+                                p.WaitForExit(5000);
+                                Logger.LogInfo($"Terminated clamd process (PID {p.Id}).", Array.Empty<object>());
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogWarning($"Failed to terminate clamd process (PID {p.Id}): {ex.Message}", Array.Empty<object>());
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Logger.LogInfo("Connected to existing clamd daemon successfully.", Array.Empty<object>());
+                    }
+                }
+
+                if (Process.GetProcessesByName("clamd").Length == 0 && File.Exists(ClamdExe))
                 {
                     var startInfo = new ProcessStartInfo
                     {
@@ -327,8 +354,73 @@ namespace antivirus
             }
                 if (!clamdReady)
                 {
-                    Logger.LogError($"ClamAV daemon (clamd.exe) did not start or is not listening on port 3310 after {maxWaitSeconds} seconds.", Array.Empty<object>());
-                    return false;
+                    Logger.LogWarning($"ClamAV daemon (clamd.exe) did not start or is not listening on port 3310 after {maxWaitSeconds} seconds. Attempting recovery.", Array.Empty<object>());
+
+                    try
+                    {
+                        // Kill any lingering clamd processes
+                        var lingering = Process.GetProcessesByName("clamd");
+                        foreach (var p in lingering)
+                        {
+                            try { p.Kill(true); p.WaitForExit(3000); Logger.LogInfo($"Terminated lingering clamd process (PID {p.Id}) during recovery.", Array.Empty<object>()); } catch { }
+                        }
+
+                        // Try to start a fresh clamd process
+                        if (File.Exists(ClamdExe))
+                        {
+                            var startInfo = new ProcessStartInfo
+                            {
+                                FileName = ClamdExe,
+                                WorkingDirectory = ClamAVDir,
+                                CreateNoWindow = true,
+                                UseShellExecute = false,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true
+                            };
+                            var recoveryProc = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+                            try
+                            {
+                                if (recoveryProc.Start())
+                                {
+                                    Logger.LogInfo("Started clamd.exe during recovery.", Array.Empty<object>());
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogWarning($"Failed to start clamd.exe during recovery: {ex.Message}", Array.Empty<object>());
+                            }
+                        }
+
+                        // Wait a short while for the daemon to accept connections
+                        int recoveryAttempts = 0;
+                        while (recoveryAttempts < 30 && !clamdReady)
+                        {
+                            recoveryAttempts++;
+                            try
+                            {
+                                using var client = new TcpClient();
+                                var task = client.ConnectAsync("localhost", 3310);
+                                if (task.Wait(1000) && client.Connected)
+                                {
+                                    clamdReady = true;
+                                    Logger.LogInfo("clamd.exe became available during recovery.", Array.Empty<object>());
+                                    break;
+                                }
+                            }
+                            catch { }
+                            System.Threading.Thread.Sleep(1000);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning($"Exception during clamd recovery: {ex.Message}", Array.Empty<object>());
+                    }
+
+                    if (!clamdReady)
+                    {
+                        Logger.LogError($"ClamAV daemon (clamd.exe) is not responding after recovery attempts.", Array.Empty<object>());
+                        return false;
+                    }
                 }
 
                 // mark initialized so subsequent calls are fast/no-op
