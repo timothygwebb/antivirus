@@ -4,11 +4,26 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>antivirus</RootNamespace>
     <AssemblyName>antivirus</AssemblyName>
+    <StartupObject>antivirus.Program</StartupObject>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="xunit.assert" Version="2.5.3" />
-    <PackageReference Include="xunit.extensibility.core" Version="2.5.3" />
+    <Compile Update="Properties\Resources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
   </ItemGroup>
-  <!-- Removed invalid ProjectReference to legacy project -->
-  <!-- Removed explicit Compile Include to avoid duplicate items -->
+  <ItemGroup>
+    <EmbeddedResource Update="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
+  <!-- Removed unnecessary test package references and restored clean SDK-style configuration -->
 </Project>
