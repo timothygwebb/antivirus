@@ -36,7 +36,10 @@ namespace antivirus
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("Could not read MBR: " + ex.Message, new object[0]);
+                var msg = "Could not read MBR: " + ex.Message;
+                if (ex is UnauthorizedAccessException)
+                    msg += " (Try running as administrator)";
+                Logger.LogWarning(msg, Array.Empty<object>());
             }
             return false;
         }
