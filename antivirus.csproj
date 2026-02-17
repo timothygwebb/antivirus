@@ -1,19 +1,39 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <TargetFrameworkVersion>v1.1</TargetFrameworkVersion>
     <StartupObject>antivirus.Program</StartupObject>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <IntermediateOutputPath>obj\</IntermediateOutputPath>
+    <AssemblyName>antivirus</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="xunit.assert" Version="2.5.3" />
-    <PackageReference Include="xunit.extensibility.core" Version="2.5.3" />
+    <!-- Removed modern dependencies (xunit.assert, xunit.extensibility.core) -->
+    <Compile Include="*.cs" Exclude="*Backup.cs" />
+    <None Include="BrowserRepair_Backup.cs" />
+    <None Include="ClamAVDefinitionsManager_Backup.cs" />
+    <None Include="DefaultLogger_Backup.cs" />
+    <None Include="Definitions_Backup.cs" />
+    <None Include="ILogger_Backup.cs" />
+    <None Include="Logger_Backup.cs" />
+    <None Include="MBRChecker_Backup.cs" />
+    <None Include="Program_Backup.cs" />
+    <None Include="Quarantine_Backup.cs" />
+    <None Include="Scanner_Backup.cs" />
   </ItemGroup>
+
+  <Target Name="Clean">
+    <RemoveDir Directories="$(IntermediateOutputPath)" />
+  </Target>
+
+  <Target Name="Build">
+    <Message Text="Building the project..." />
+    <Csc Sources="@(Compile)" OutputAssembly="bin\$(AssemblyName).exe" />
+  </Target>
+
+  <Target Name="Rebuild" DependsOnTargets="Clean;Build">
+    <Message Text="Rebuilding the project..." />
+  </Target>
 
 </Project>

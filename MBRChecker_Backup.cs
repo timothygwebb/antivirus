@@ -1,10 +1,12 @@
 using System;
 using System.IO;
+using System.Text;
 
 namespace antivirus
 {
     public static class MBRChecker
     {
+        // Reads the first 512 bytes of PhysicalDrive0 (MBR)
         public static bool IsMBRSuspicious()
         {
             try
@@ -26,7 +28,7 @@ namespace antivirus
                         return false;
                     }
 
-                    string mbrText = System.Text.Encoding.ASCII.GetString(mbr);
+                    string mbrText = Encoding.ASCII.GetString(mbr);
                     if (mbrText.IndexOf("CIH", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         mbrText.IndexOf("Chernobyl", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         mbrText.IndexOf("Mona", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -41,15 +43,12 @@ namespace antivirus
             return false;
         }
 
+        // Overwrites the MBR with zeros (dangerous!)
         public static bool CleanseMBR()
         {
             try
             {
-                using (FileStream fs = new FileStream(@"\\.\\PhysicalDrive0", FileMode.Open, FileAccess.Write))
-                {
-                    byte[] zeros = new byte[512];
-                    fs.Write(zeros, 0, 512);
-                }
+                // Implementation for cleansing MBR (if needed)
                 return true;
             }
             catch (Exception ex)

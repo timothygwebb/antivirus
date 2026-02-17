@@ -1,6 +1,4 @@
 <Solution>
   <Project Path="antivirus.csproj" />
-  <Project Path="antivirus.Tests/antivirus.Tests.csproj">
-    <Build Solution="Debug|*" Project="false" />
-  </Project>
+  <Project Path="antivirus.Tests/antivirus.Tests.csproj" />
 </Solution>

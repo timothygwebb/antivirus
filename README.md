@@ -1,6 +1,18 @@
 # Antivirus Recovery Tool
 
-## Bootable CD/USB Usage
+## Overview
+The Antivirus Recovery Tool is a cross-platform application designed to scan and remove malware, repair browser access, and manage ClamAV virus definitions. The tool is compatible with both modern operating systems (e.g., Windows 10/11) and older systems (e.g., Windows Me) through a dual OS compatibility mode.
+
+## Features
+- **Dual OS Compatibility**: Automatically detects the operating system and runs in compatibility mode for older systems.
+- **Malware Scanning**: Scans for and removes malware, including MBR infections.
+- **Browser Repair**: Repairs browser access by downloading and installing legacy browsers if needed.
+- **ClamAV Integration**: Ensures virus definitions are up-to-date and performs scans using ClamAV.
+- **Logging**: Logs all actions to `antivirus.log` in the current directory.
+
+## Usage
+
+### Bootable CD/USB Usage
 
 1. **Create a Bootable USB or CD:**
    - For USB: Use [Rufus](https://rufus.ie/) or similar to create a bootable Windows PE or minimal Linux environment.
@@ -22,6 +34,30 @@
 
 6. **No Internet?**
    - All required tools are included on the media. If network access is restored, the tool will attempt to update ClamAV and browsers automatically.
+
+---
+
+## Development
+
+### Project Structure
+- **Program.cs**: Entry point of the application. Implements dual OS compatibility logic.
+- **Scanner.cs**: Handles malware scanning and ClamAV integration.
+- **MBRChecker.cs**: Checks and cleanses the Master Boot Record (MBR).
+- **DefaultLogger.cs**: Provides logging functionality.
+- **ClamAVDefinitionsManager.cs**: Manages ClamAV virus definitions.
+- **Definitions.cs**: Handles virus definitions database.
+- **BrowserRepair.cs**: Repairs browser access and installs legacy browsers if needed.
+- **Quarantine.cs**: Manages quarantining of infected files.
+- **ILogger.cs**: Interface for logging.
+- **Logger.cs**: Implements logging functionality.
+
+### Compatibility Mode
+- The application uses `_Backup` files for compatibility with older operating systems (e.g., Windows Me).
+- The `Program.cs` file dynamically determines the OS version and loads the appropriate files.
+
+### Building the Project
+- The project targets `.NET 8` for modern systems.
+- For compatibility with older systems, the `_Backup` files are designed to work with `.NET Framework 1.1`.
 
 ---
 

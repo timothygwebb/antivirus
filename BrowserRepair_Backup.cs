@@ -1,16 +1,13 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-#if WINDOWS
-using Microsoft.Win32;
-#endif
 
 namespace antivirus
 {
     public static class BrowserRepair
     {
         // Paths to bundled installers
-        private static readonly string[] BrowserInstallers = {
+        private static readonly string[] BrowserInstallers = new string[] {
             "ChromeSetup.exe",
             "FirefoxSetup.exe",
             "OperaSetup.exe",

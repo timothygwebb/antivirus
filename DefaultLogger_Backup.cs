@@ -1,5 +1,3 @@
-using System;
-
 namespace antivirus
 {
     public class DefaultLogger : ILogger
