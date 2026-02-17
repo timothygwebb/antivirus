@@ -6,7 +6,7 @@ The Antivirus Recovery Tool is a cross-platform application designed to scan and
 ## Features
 - **Dual OS Compatibility**: Automatically detects the operating system and runs in compatibility mode for older systems.
 - **Malware Scanning**: Scans for and removes malware, including MBR infections.
-- **Browser Repair**: Repairs browser access by downloading and installing legacy browsers if needed.
+- **Browser Repair**: Repairs browser access by downloading and installing legacy browsers if needed. This process is now decoupled and runs as a separate process after a successful scan.
 - **ClamAV Integration**: Ensures virus definitions are up-to-date and performs scans using ClamAV.
 - **Logging**: Logs all actions to `antivirus.log` in the current directory.
 
@@ -29,7 +29,7 @@ The Antivirus Recovery Tool is a cross-platform application designed to scan and
 
 5. **What the Tool Does:**
    - Scans for and removes malware, including MBR infections.
-   - Attempts to repair browser access by downloading and installing legacy browsers if needed.
+   - Attempts to repair browser access by downloading and installing legacy browsers if needed. This step is now performed as a separate process after the scan completes.
    - Logs all actions to `antivirus.log` in the current directory.
 
 6. **No Internet?**
@@ -40,13 +40,13 @@ The Antivirus Recovery Tool is a cross-platform application designed to scan and
 ## Development
 
 ### Project Structure
-- **Program.cs**: Entry point of the application. Implements dual OS compatibility logic.
-- **Scanner.cs**: Handles malware scanning and ClamAV integration.
+- **Program.cs**: Entry point of the application. Implements dual OS compatibility logic and launches browser repair as a separate process after a successful scan.
+- **Scanner.cs**: Handles malware scanning and ClamAV integration. Ensures ClamAV daemon readiness and virus definitions.
 - **MBRChecker.cs**: Checks and cleanses the Master Boot Record (MBR).
 - **DefaultLogger.cs**: Provides logging functionality.
 - **ClamAVDefinitionsManager.cs**: Manages ClamAV virus definitions.
 - **Definitions.cs**: Handles virus definitions database.
-- **BrowserRepair.cs**: Repairs browser access and installs legacy browsers if needed.
+- **BrowserRepair.cs**: Repairs browser access and installs legacy browsers. Now executed as a separate process.
 - **Quarantine.cs**: Manages quarantining of infected files.
 - **ILogger.cs**: Interface for logging.
 - **Logger.cs**: Implements logging functionality.
