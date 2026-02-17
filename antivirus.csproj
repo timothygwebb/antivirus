@@ -12,7 +12,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Removed explicit inclusion of Logger.cs to avoid duplicate 'Compile' items error -->
+    <PackageReference Include="xunit.assert" Version="2.5.3" />
+    <PackageReference Include="xunit.extensibility.core" Version="2.5.3" />
   </ItemGroup>
 
 </Project>
