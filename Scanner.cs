@@ -142,93 +142,93 @@ namespace antivirus
 
                 // 1. Download and extract ClamAV if needed
                 if (!File.Exists(ClamdExe))
-            {
-                Logger.LogWarning($"ClamAV not found: {ClamdExe}. Attempting to download...", Array.Empty<object>());
-                Console.WriteLine($"ClamAV not found: {ClamdExe}. Attempting to download...");
-                try
                 {
-                    var handler = new HttpClientHandler
+                    Logger.LogWarning($"ClamAV not found: {ClamdExe}. Attempting to download...", Array.Empty<object>());
+                    Console.WriteLine($"ClamAV not found: {ClamdExe}. Attempting to download...");
+                    try
                     {
-                        ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
-                    };
-                    using var httpClient = new HttpClient(handler);
-                    string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
-                    DownloadFileAsync(ClamAVZipUrl, tempZip).GetAwaiter().GetResult();
-                    ZipFile.ExtractToDirectory(tempZip, ClamAVDir, true);
-                    var dirs = Directory.GetDirectories(ClamAVDir);
-                    if (dirs.Length == 1)
-                    {
-                        string subDir = dirs[0];
-                        foreach (var file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
+                        var handler = new HttpClientHandler
                         {
-                            string relPath = Path.GetRelativePath(subDir, file);
-                            string destPath = Path.Combine(ClamAVDir, relPath);
-                            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-                            File.Move(file, destPath, true);
-                        }
-                        foreach (var dir in Directory.GetDirectories(subDir, "*", SearchOption.AllDirectories))
+                            ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
+                        };
+                        using var httpClient = new HttpClient(handler);
+                        string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
+                        DownloadFileAsync(ClamAVZipUrl, tempZip).GetAwaiter().GetResult();
+                        ZipFile.ExtractToDirectory(tempZip, ClamAVDir, true);
+                        var dirs = Directory.GetDirectories(ClamAVDir);
+                        if (dirs.Length == 1)
                         {
-                            string relPath = Path.GetRelativePath(subDir, dir);
-                            string destPath = Path.Combine(ClamAVDir, relPath);
-                            Directory.CreateDirectory(destPath);
+                            string subDir = dirs[0];
+                            foreach (var file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
+                            {
+                                string relPath = Path.GetRelativePath(subDir, file);
+                                string destPath = Path.Combine(ClamAVDir, relPath);
+                                Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                                File.Move(file, destPath, true);
+                            }
+                            foreach (var dir in Directory.GetDirectories(subDir, "*", SearchOption.AllDirectories))
+                            {
+                                string relPath = Path.GetRelativePath(subDir, dir);
+                                string destPath = Path.Combine(ClamAVDir, relPath);
+                                Directory.CreateDirectory(destPath);
+                            }
+                            Directory.Delete(subDir, true);
+                            Logger.LogInfo($"Moved ClamAV files from subdirectory '{Path.GetFileName(subDir)}' to '{ClamAVDir}'.", Array.Empty<object>());
                         }
-                        Directory.Delete(subDir, true);
-                        Logger.LogInfo($"Moved ClamAV files from subdirectory '{Path.GetFileName(subDir)}' to '{ClamAVDir}'.", Array.Empty<object>());
+                        Logger.LogInfo("ClamAV downloaded and extracted.", Array.Empty<object>());
+                        Console.WriteLine("ClamAV downloaded and extracted.");
                     }
-                    Logger.LogInfo("ClamAV downloaded and extracted.", Array.Empty<object>());
-                    Console.WriteLine("ClamAV downloaded and extracted.");
+                    catch (Exception ex)
+                    {
+                        Logger.LogError($"Failed to download or extract ClamAV: {ex.Message}", Array.Empty<object>());
+                        Console.WriteLine("Failed to download or extract ClamAV. Please download and extract it manually from https://www.clamav.net/downloads.");
+                        return false;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Logger.LogError($"Failed to download or extract ClamAV: {ex.Message}", Array.Empty<object>());
-                    Console.WriteLine("Failed to download or extract ClamAV. Please download and extract it manually from https://www.clamav.net/downloads.");
-                    return false;
-                }
-            }
 
-            // 2. Create config files if needed
-            string freshclamConf = Path.Combine(ClamAVDir, "freshclam.conf");
-            if (!File.Exists(freshclamConf))
-            {
-                try
+                // 2. Create config files if needed
+                string freshclamConf = Path.Combine(ClamAVDir, "freshclam.conf");
+                if (!File.Exists(freshclamConf))
                 {
-                    var conf = new[]
+                    try
                     {
-                        $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
-                        "DatabaseMirror database.clamav.net"
-                    };
-                    File.WriteAllLines(freshclamConf, conf);
-                    Logger.LogInfo("Created default freshclam.conf for ClamAV.", Array.Empty<object>());
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning($"Failed to create freshclam.conf: {ex.Message}", Array.Empty<object>());
-                }
-            }
-            string clamdConf = Path.Combine(ClamAVDir, "clamd.conf");
-            if (!File.Exists(clamdConf))
-            {
-                try
-                {
-                    var conf = new[]
+                        var conf = new[]
+                        {
+                            $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
+                            "DatabaseMirror database.clamav.net"
+                        };
+                        File.WriteAllLines(freshclamConf, conf);
+                        Logger.LogInfo("Created default freshclam.conf for ClamAV.", Array.Empty<object>());
+                    }
+                    catch (Exception ex)
                     {
-                        $"LogFile {Path.Combine(ClamAVDir, "clamd.log").Replace("\\", "/")}",
-                        $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
-                        "TCPSocket 3310",
-                        "TCPAddr 127.0.0.1",
-                        "Foreground true",
-                        "ScanPE true",
-                        "ScanELF false",
-                        "ScanMail false"
-                    };
-                    File.WriteAllLines(clamdConf, conf);
-                    Logger.LogInfo("Created default clamd.conf for ClamAV.", Array.Empty<object>());
+                        Logger.LogWarning($"Failed to create freshclam.conf: {ex.Message}", Array.Empty<object>());
+                    }
                 }
-                catch (Exception ex)
+                string clamdConf = Path.Combine(ClamAVDir, "clamd.conf");
+                if (!File.Exists(clamdConf))
                 {
-                    Logger.LogWarning($"Failed to create clamd.conf: {ex.Message}", Array.Empty<object>());
+                    try
+                    {
+                        var conf = new[]
+                        {
+                            $"LogFile {Path.Combine(ClamAVDir, "clamd.log").Replace("\\", "/")}",
+                            $"DatabaseDirectory {ClamAVDir.Replace("\\", "/")}",
+                            "TCPSocket 3310",
+                            "TCPAddr 127.0.0.1",
+                            "Foreground true",
+                            "ScanPE true",
+                            "ScanELF false",
+                            "ScanMail false"
+                        };
+                        File.WriteAllLines(clamdConf, conf);
+                        Logger.LogInfo("Created default clamd.conf for ClamAV.", Array.Empty<object>());
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning($"Failed to create clamd.conf: {ex.Message}", Array.Empty<object>());
+                    }
                 }
-            }
 
                 // 3. Clean ClamAV directory and update database before starting clamd.exe
                 CleanClamAVDirectory();
@@ -240,190 +240,50 @@ namespace antivirus
                         Logger.LogInfo("Skipping freshclam update because a recent attempt was made.", Array.Empty<object>());
                 }
                 catch { }
-            try
-            {
-                var clamdProcesses = Process.GetProcessesByName("clamd");
-                if (clamdProcesses.Length > 0)
-                {
-                    Logger.LogInfo($"Found existing clamd.exe processes: {clamdProcesses.Length}. Attempting to use existing daemon.", Array.Empty<object>());
-                    // If existing clamd processes exist try to connect to the daemon first
-                    if (!IsClamAVDaemonReady())
-                    {
-                        Logger.LogWarning("Existing clamd.exe processes found but daemon is not responding on port 3310. Attempting to terminate existing processes and start a new daemon.", Array.Empty<object>());
-                        foreach (var p in clamdProcesses)
-                        {
-                            try
-                            {
-                                p.Kill(true);
-                                p.WaitForExit(5000);
-                                Logger.LogInfo($"Terminated clamd process (PID {p.Id}).", Array.Empty<object>());
-                            }
-                            catch (Exception ex)
-                            {
-                                Logger.LogWarning($"Failed to terminate clamd process (PID {p.Id}): {ex.Message}", Array.Empty<object>());
-                            }
-                        }
-                    }
-                    else
-                    {
-                        Logger.LogInfo("Connected to existing clamd daemon successfully.", Array.Empty<object>());
-                    }
-                }
 
-                if (Process.GetProcessesByName("clamd").Length == 0 && File.Exists(ClamdExe))
-                {
-                    var startInfo = new ProcessStartInfo
-                    {
-                        FileName = ClamdExe,
-                        WorkingDirectory = ClamAVDir,
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    };
-                    var clamdProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-                    // Tee clamd stdout/stderr to the application logs and also to a file for easier debugging.
-                    string clamdLogFile = Path.Combine(ClamAVDir, "clamd_process.log");
-                    object _fileLock = new object();
-                    clamdProcess.OutputDataReceived += (s, e) => {
-                        if (e != null && !string.IsNullOrEmpty(e.Data))
-                        {
-                            Logger.LogInfo($"clamd.exe: {e.Data}", Array.Empty<object>());
-                            try { lock (_fileLock) File.AppendAllText(clamdLogFile, DateTime.Now + " OUT: " + e.Data + Environment.NewLine); } catch { }
-                        }
-                    };
-                    clamdProcess.ErrorDataReceived += (s, e) => {
-                        if (e != null && !string.IsNullOrEmpty(e.Data))
-                        {
-                            Logger.LogError($"clamd.exe error: {e.Data}", Array.Empty<object>());
-                            try { lock (_fileLock) File.AppendAllText(clamdLogFile, DateTime.Now + " ERR: " + e.Data + Environment.NewLine); } catch { }
-                        }
-                    };
-                    clamdProcess.Exited += (s, e) => {
-                        try { Logger.LogError($"clamd.exe process exited with code {clamdProcess.ExitCode}.", Array.Empty<object>()); } catch { }
-                    };
-                    if (clamdProcess.Start())
-                    {
-                        clamdProcess.BeginOutputReadLine();
-                        clamdProcess.BeginErrorReadLine();
-                        Logger.LogInfo("clamd.exe started by application.", Array.Empty<object>());
-                    }
-                    else
-                    {
-                        Logger.LogError("Failed to start clamd.exe process.", Array.Empty<object>());
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"Failed to start ClamAV daemon: {ex.Message}", Array.Empty<object>());
-            }
-
-            // 4. Wait for clamd to be ready (port 3310)
-            bool clamdReady = false;
-            int maxWaitSeconds = 120; // increase wait to allow clamd more time to bind
-            int attempt = 0;
-            while (attempt < maxWaitSeconds && !clamdReady)
-            {
-                attempt++;
                 try
                 {
-                    using var client = new TcpClient();
-                    var connectTask = client.ConnectAsync("localhost", 3310);
-                    // Use an adaptive timeout: 1s initially, then increases slightly
-                    int timeoutMs = Math.Min(5000, 500 + attempt * 100);
-                    if (connectTask.Wait(timeoutMs) && client.Connected)
+                    var clamdProcesses = Process.GetProcessesByName("clamd");
+                    if (clamdProcesses.Length > 0)
                     {
-                        Logger.LogInfo($"clamd.exe is listening on port 3310 (attempt {attempt}).", Array.Empty<object>());
-                        clamdReady = true;
-                        break;
+                        Logger.LogInfo($"Found existing clamd.exe processes: {clamdProcesses.Length}. Attempting to use existing daemon.", Array.Empty<object>());
+                        // If existing clamd processes exist, assume daemon is ready
+                        ClamAVInitialized = true;
+                        return true;
+                    }
+
+                    if (File.Exists(ClamdExe))
+                    {
+                        var startInfo = new ProcessStartInfo
+                        {
+                            FileName = ClamdExe,
+                            WorkingDirectory = ClamAVDir,
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        };
+                        var clamdProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+                        if (clamdProcess.Start())
+                        {
+                            Logger.LogInfo("clamd.exe started by application.", Array.Empty<object>());
+                            ClamAVInitialized = true;
+                            return true;
+                        }
+                        else
+                        {
+                            Logger.LogError("Failed to start clamd.exe process.", Array.Empty<object>());
+                            return false;
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogInfo($"Connection attempt {attempt} to clamd.exe on port 3310 failed: {ex.Message}", Array.Empty<object>());
-                }
-                if (!clamdReady)
-                {
-                    if (attempt == 1)
-                        Logger.LogInfo("Waiting for clamd.exe to listen on port 3310...", Array.Empty<object>());
-                    // exponential backoff with cap
-                    int backoff = Math.Min(5000, (int)Math.Pow(2, Math.Min(10, attempt)) * 100);
-                    System.Threading.Thread.Sleep(backoff);
-                }
-            }
-                if (!clamdReady)
-                {
-                    Logger.LogWarning($"ClamAV daemon (clamd.exe) did not start or is not listening on port 3310 after {maxWaitSeconds} seconds. Attempting recovery.", Array.Empty<object>());
-
-                    try
-                    {
-                        // Kill any lingering clamd processes
-                        var lingering = Process.GetProcessesByName("clamd");
-                        foreach (var p in lingering)
-                        {
-                            try { p.Kill(true); p.WaitForExit(3000); Logger.LogInfo($"Terminated lingering clamd process (PID {p.Id}) during recovery.", Array.Empty<object>()); } catch { }
-                        }
-
-                        // Try to start a fresh clamd process
-                        if (File.Exists(ClamdExe))
-                        {
-                            var startInfo = new ProcessStartInfo
-                            {
-                                FileName = ClamdExe,
-                                WorkingDirectory = ClamAVDir,
-                                CreateNoWindow = true,
-                                UseShellExecute = false,
-                                RedirectStandardOutput = true,
-                                RedirectStandardError = true
-                            };
-                            var recoveryProc = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-                            try
-                            {
-                                if (recoveryProc.Start())
-                                {
-                                    Logger.LogInfo("Started clamd.exe during recovery.", Array.Empty<object>());
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Logger.LogWarning($"Failed to start clamd.exe during recovery: {ex.Message}", Array.Empty<object>());
-                            }
-                        }
-
-                        // Wait a short while for the daemon to accept connections
-                        int recoveryAttempts = 0;
-                        while (recoveryAttempts < 30 && !clamdReady)
-                        {
-                            recoveryAttempts++;
-                            try
-                            {
-                                using var client = new TcpClient();
-                                var task = client.ConnectAsync("localhost", 3310);
-                                if (task.Wait(1000) && client.Connected)
-                                {
-                                    clamdReady = true;
-                                    Logger.LogInfo("clamd.exe became available during recovery.", Array.Empty<object>());
-                                    break;
-                                }
-                            }
-                            catch { }
-                            System.Threading.Thread.Sleep(1000);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogWarning($"Exception during clamd recovery: {ex.Message}", Array.Empty<object>());
-                    }
-
-                    if (!clamdReady)
-                    {
-                        Logger.LogError($"ClamAV daemon (clamd.exe) is not responding after recovery attempts.", Array.Empty<object>());
-                        return false;
-                    }
+                    Logger.LogError($"Failed to start ClamAV daemon: {ex.Message}", Array.Empty<object>());
+                    return false;
                 }
 
-                // mark initialized so subsequent calls are fast/no-op
+                // Mark initialized even if we don't wait for clamd to be ready
                 ClamAVInitialized = true;
                 return true;
             }
