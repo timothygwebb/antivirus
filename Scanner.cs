@@ -18,6 +18,12 @@ namespace antivirus
     /// </summary>
     public static class Scanner
     {
+        // Guard to prevent repeated ClamAV initialization and duplicate actions/logging
+        private static readonly object ClamAVInitLock = new object();
+        private static bool ClamAVInitialized = false;
+        private static readonly object BrowserInstallersLock = new object();
+        private static bool BrowserInstallersInitialized = false;
+
         private static readonly HashSet<string> ExcludedExtensions = new()
         {
             ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml"
@@ -28,7 +34,7 @@ namespace antivirus
             "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys"
         };
         // Removed unused field clamAvWarned
-        private static readonly string ClamAVDir = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
+		private static readonly string ClamAVDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClamAV");
         private static readonly string ClamdExe = Path.Combine(ClamAVDir, "clamd.exe");
         private static readonly string ClamAVZipUrl = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
         private static readonly string KmeleonUrl = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
@@ -80,6 +86,11 @@ namespace antivirus
                         Logger.LogInfo($"freshclam output: {output}", Array.Empty<object>());
                         if (!string.IsNullOrEmpty(error))
                             Logger.LogWarning($"freshclam error: {error}", Array.Empty<object>());
+                        // If freshclam succeeded, notify the definitions manager
+                        if (process.ExitCode == 0)
+                        {
+                            try { ClamAVDefinitionsManager.NotifyUpdated(); } catch { }
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -120,8 +131,17 @@ namespace antivirus
         /// </summary>
         public static bool EnsureClamAVInstalled()
         {
-            // 1. Download and extract ClamAV if needed
-            if (!File.Exists(ClamdExe))
+            // If daemon already responding or we've initialized, nothing to do
+            if (ClamAVInitialized || IsClamAVDaemonReady())
+                return true;
+
+            lock (ClamAVInitLock)
+            {
+                if (ClamAVInitialized)
+                    return true;
+
+                // 1. Download and extract ClamAV if needed
+                if (!File.Exists(ClamdExe))
             {
                 Logger.LogWarning($"ClamAV not found: {ClamdExe}. Attempting to download...", Array.Empty<object>());
                 Console.WriteLine($"ClamAV not found: {ClamdExe}. Attempting to download...");
@@ -210,7 +230,16 @@ namespace antivirus
                 }
             }
 
-            // 3. Start clamd.exe if not running
+                // 3. Clean ClamAV directory and update database before starting clamd.exe
+                CleanClamAVDirectory();
+                try
+                {
+                    if (ClamAVDefinitionsManager.ShouldAttemptUpdate())
+                        UpdateClamAVDatabase();
+                    else
+                        Logger.LogInfo("Skipping freshclam update because a recent attempt was made.", Array.Empty<object>());
+                }
+                catch { }
             try
             {
                 var clamdProcesses = Process.GetProcessesByName("clamd");
@@ -225,13 +254,36 @@ namespace antivirus
                         RedirectStandardOutput = true,
                         RedirectStandardError = true
                     };
-                    var process = Process.Start(startInfo);
-                    if (process != null)
+                    var clamdProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+                    // Tee clamd stdout/stderr to the application logs and also to a file for easier debugging.
+                    string clamdLogFile = Path.Combine(ClamAVDir, "clamd_process.log");
+                    object _fileLock = new object();
+                    clamdProcess.OutputDataReceived += (s, e) => {
+                        if (e != null && !string.IsNullOrEmpty(e.Data))
+                        {
+                            Logger.LogInfo($"clamd.exe: {e.Data}", Array.Empty<object>());
+                            try { lock (_fileLock) File.AppendAllText(clamdLogFile, DateTime.Now + " OUT: " + e.Data + Environment.NewLine); } catch { }
+                        }
+                    };
+                    clamdProcess.ErrorDataReceived += (s, e) => {
+                        if (e != null && !string.IsNullOrEmpty(e.Data))
+                        {
+                            Logger.LogError($"clamd.exe error: {e.Data}", Array.Empty<object>());
+                            try { lock (_fileLock) File.AppendAllText(clamdLogFile, DateTime.Now + " ERR: " + e.Data + Environment.NewLine); } catch { }
+                        }
+                    };
+                    clamdProcess.Exited += (s, e) => {
+                        try { Logger.LogError($"clamd.exe process exited with code {clamdProcess.ExitCode}.", Array.Empty<object>()); } catch { }
+                    };
+                    if (clamdProcess.Start())
                     {
-                        process.OutputDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) Logger.LogInfo($"clamd.exe: {e.Data}", Array.Empty<object>()); };
-                        process.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) Logger.LogError($"clamd.exe error: {e.Data}", Array.Empty<object>()); };
-                        process.BeginOutputReadLine();
-                        process.BeginErrorReadLine();
+                        clamdProcess.BeginOutputReadLine();
+                        clamdProcess.BeginErrorReadLine();
+                        Logger.LogInfo("clamd.exe started by application.", Array.Empty<object>());
+                    }
+                    else
+                    {
+                        Logger.LogError("Failed to start clamd.exe process.", Array.Empty<object>());
                     }
                 }
             }
@@ -242,30 +294,47 @@ namespace antivirus
 
             // 4. Wait for clamd to be ready (port 3310)
             bool clamdReady = false;
-            for (int i = 0; i < 10; i++) // wait up to 10 seconds
+            int maxWaitSeconds = 120; // increase wait to allow clamd more time to bind
+            int attempt = 0;
+            while (attempt < maxWaitSeconds && !clamdReady)
             {
+                attempt++;
                 try
                 {
                     using var client = new TcpClient();
-                    var task = client.ConnectAsync("localhost", 3310);
-                    if (task.Wait(1000) && client.Connected)
+                    var connectTask = client.ConnectAsync("localhost", 3310);
+                    // Use an adaptive timeout: 1s initially, then increases slightly
+                    int timeoutMs = Math.Min(5000, 500 + attempt * 100);
+                    if (connectTask.Wait(timeoutMs) && client.Connected)
                     {
+                        Logger.LogInfo($"clamd.exe is listening on port 3310 (attempt {attempt}).", Array.Empty<object>());
                         clamdReady = true;
                         break;
                     }
                 }
-                catch { }
-                System.Threading.Thread.Sleep(1000);
+                catch (Exception ex)
+                {
+                    Logger.LogInfo($"Connection attempt {attempt} to clamd.exe on port 3310 failed: {ex.Message}", Array.Empty<object>());
+                }
+                if (!clamdReady)
+                {
+                    if (attempt == 1)
+                        Logger.LogInfo("Waiting for clamd.exe to listen on port 3310...", Array.Empty<object>());
+                    // exponential backoff with cap
+                    int backoff = Math.Min(5000, (int)Math.Pow(2, Math.Min(10, attempt)) * 100);
+                    System.Threading.Thread.Sleep(backoff);
+                }
             }
-            if (!clamdReady)
-            {
-                Logger.LogError("ClamAV daemon (clamd.exe) did not start or is not listening on port 3310.", Array.Empty<object>());
-                return false;
-            }
+                if (!clamdReady)
+                {
+                    Logger.LogError($"ClamAV daemon (clamd.exe) did not start or is not listening on port 3310 after {maxWaitSeconds} seconds.", Array.Empty<object>());
+                    return false;
+                }
 
-            // 5. Run freshclam to update definitions
-            UpdateClamAVDatabase();
-            return true;
+                // mark initialized so subsequent calls are fast/no-op
+                ClamAVInitialized = true;
+                return true;
+            }
         }
 
         // Move browser download logic into a method
@@ -408,40 +477,53 @@ namespace antivirus
 
         private static string? ScanWithClamAVTcp(string filePath)
         {
-            const int maxAttempts = 3;
-            const int delayMs = 1000;
+            const int maxAttempts = 6;
+            const int baseDelayMs = 500;
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 try
                 {
-                    using var client = new TcpClient("localhost", 3310);
-                    using var stream = client.GetStream();
-                    byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
-                    stream.Write(cmd, 0, cmd.Length);
-                    using var file = File.OpenRead(filePath);
-                    byte[] buffer = new byte[2048];
-                    int bytesRead;
-                    while ((bytesRead = file.Read(buffer, 0, buffer.Length)) > 0)
+                    using (var client = new TcpClient())
                     {
-                        byte[] size = new byte[4];
-                        size[0] = (byte)((bytesRead >> 24) & 0xFF);
-                        size[1] = (byte)((bytesRead >> 16) & 0xFF);
-                        size[2] = (byte)((bytesRead >> 8) & 0xFF);
-                        size[3] = (byte)(bytesRead & 0xFF);
-                        stream.Write(size, 0, size.Length);
-                        stream.Write(buffer, 0, bytesRead);
+                        var connectTask = client.ConnectAsync("localhost", 3310);
+                        int timeout = 2000 + attempt * 1000; // increase timeout each attempt
+                        if (!connectTask.Wait(timeout) || !client.Connected)
+                            throw new SocketException();
+                        using var stream = client.GetStream();
+                        byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
+                        stream.Write(cmd, 0, cmd.Length);
+                        using var file = File.OpenRead(filePath);
+                        byte[] buffer = new byte[2048];
+                        int bytesRead;
+                        while ((bytesRead = file.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            byte[] size = new byte[4];
+                            size[0] = (byte)((bytesRead >> 24) & 0xFF);
+                            size[1] = (byte)((bytesRead >> 16) & 0xFF);
+                            size[2] = (byte)((bytesRead >> 8) & 0xFF);
+                            size[3] = (byte)(bytesRead & 0xFF);
+                            stream.Write(size, 0, size.Length);
+                            stream.Write(buffer, 0, bytesRead);
+                        }
+                        stream.Write(new byte[4], 0, 4);
+                        using var ms = new MemoryStream();
+                        byte[] respBuffer = new byte[1024];
+                        int respBytes = stream.Read(respBuffer, 0, respBuffer.Length);
+                        ms.Write(respBuffer, 0, respBytes);
+                        return Encoding.ASCII.GetString(ms.ToArray());
                     }
-                    stream.Write(new byte[4], 0, 4);
-                    using var ms = new MemoryStream();
-                    byte[] respBuffer = new byte[1024];
-                    int respBytes = stream.Read(respBuffer, 0, respBuffer.Length);
-                    ms.Write(respBuffer, 0, respBytes);
-                    return Encoding.ASCII.GetString(ms.ToArray());
                 }
                 catch (SocketException ex) when (attempt < maxAttempts)
                 {
                     Logger.LogWarning($"ClamAV connection failed (attempt {attempt}): {ex.Message}", Array.Empty<object>());
-                    System.Threading.Thread.Sleep(delayMs);
+                    int sleep = baseDelayMs * (int)Math.Pow(2, attempt - 1);
+                    System.Threading.Thread.Sleep(Math.Min(sleep, 10000));
+                }
+                catch (ObjectDisposedException ex) when (attempt < maxAttempts)
+                {
+                    Logger.LogWarning($"ClamAV socket disposed early (attempt {attempt}): {ex.Message}", Array.Empty<object>());
+                    int sleep = baseDelayMs * (int)Math.Pow(2, attempt - 1);
+                    System.Threading.Thread.Sleep(Math.Min(sleep, 10000));
                 }
                 catch (Exception ex)
                 {
@@ -458,8 +540,31 @@ namespace antivirus
         /// </summary>
         public static void Scan(string input)
         {
-            EnsureBrowserInstallers();
-            EnsureClamAVInstalled();
+            // Ensure browser installers are downloaded only once
+            lock (BrowserInstallersLock)
+            {
+                if (!BrowserInstallersInitialized)
+                {
+                    EnsureBrowserInstallers();
+                    BrowserInstallersInitialized = true;
+                }
+            }
+            // Only attempt installation/initialization if not already done
+            if (!ClamAVInitialized)
+            {
+                if (!EnsureClamAVInstalled())
+                {
+                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
+                    Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
+                    return;
+                }
+            }
+            if (!IsClamAVDaemonReady())
+            {
+                Logger.LogError("ClamAV daemon is not ready. Aborting scan.", Array.Empty<object>());
+                Console.WriteLine("ClamAV daemon is not ready. Aborting scan.");
+                return;
+            }
             if (!EnsureClamAVDefinitionsExist())
             {
                 Logger.LogError("ClamAV definitions are missing. Aborting scan.", Array.Empty<object>());
@@ -467,13 +572,14 @@ namespace antivirus
                 return;
             }
             Logger.LogInfo("Scanning started", Array.Empty<object>());
-            Definitions.LoadDefinitions();
-            if (Directory.Exists(input))
+            // Ensure definitions are present and up-to-date before scanning
+            ClamAVDefinitionsManager.EnsureDefinitionsUpToDate();
+            if (!ClamAVDefinitionsManager.DefinitionsExist())
             {
-                Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
-                ScanDirectorySafe(input);
+                Logger.LogError("ClamAV definitions are missing. Program cannot proceed.", Array.Empty<object>());
+                Console.WriteLine("ClamAV definitions are missing. Program cannot proceed.");
+                return;
             }
-            Definitions.LoadDefinitions();
             if (Directory.Exists(input))
             {
                 Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
@@ -500,6 +606,23 @@ namespace antivirus
         {
             var drive = new DriveInfo(Directory.GetCurrentDirectory());
             return drive.DriveType == DriveType.CDRom || drive.DriveType == DriveType.Removable;
+        }
+
+
+        /// <summary>
+        /// Checks if the ClamAV daemon is listening on port 3310.
+        /// </summary>
+        public static bool IsClamAVDaemonReady()
+        {
+            try
+            {
+                using var client = new TcpClient();
+                var task = client.ConnectAsync("localhost", 3310);
+                if (task.Wait(1000) && client.Connected)
+                    return true;
+            }
+            catch { }
+            return false;
         }
 
         /// <summary>

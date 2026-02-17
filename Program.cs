@@ -70,9 +70,8 @@ namespace antivirus
                     return;
                 }
 
-            // 3. Ensure ClamAV definitions are present and up-to-date
-            ClamAVDefinitionsManager.EnsureDefinitionsUpToDate();
-            if (!ClamAVDefinitionsManager.DefinitionsExist())
+            // 3. Verify ClamAV definitions exist (EnsureClamAVInstalled already attempts updates)
+            if (!Scanner.EnsureClamAVDefinitionsExist())
             {
                 Logger.LogError("ClamAV definitions are missing. Program cannot proceed.", Array.Empty<object>());
                 Console.WriteLine("ClamAV definitions are missing. Program cannot proceed.");
