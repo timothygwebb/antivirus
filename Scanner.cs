@@ -38,6 +38,42 @@ namespace antivirus
 
         private static readonly ArrayList ExcludedFiles = new ArrayList(new string[] { "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys" });
 
+        /// <summary>
+        /// Adds Windows Defender firewall rules for IPv4 and IPv6 using PowerShell.
+        /// </summary>
+        public static void AddFirewallRules(int port)
+        {
+            try
+            {
+                string tcpRule = $"New-NetFirewallRule -DisplayName 'Antivirus IPv4/IPv6' -Direction Inbound -Protocol TCP -LocalPort {port} -Action Allow";
+                string udpRule = $"New-NetFirewallRule -DisplayName 'Antivirus IPv4/IPv6' -Direction Inbound -Protocol UDP -LocalPort {port} -Action Allow";
+                var psi = new System.Diagnostics.ProcessStartInfo("powershell", $"-Command \"{tcpRule}; {udpRule}\"")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                var process = System.Diagnostics.Process.Start(psi);
+                process.WaitForExit();
+                Logger.LogInfo($"Firewall rules added for port {port} (IPv4/IPv6)", new object[0]);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Failed to add firewall rules: " + ex.Message, new object[0]);
+            }
+        }
+
+        /// <summary>
+        /// Initializes a dual-stack socket for IPv4 and IPv6.
+        /// </summary>
+        public static void InitializeDualStackSocket(int port)
+        {
+            var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetworkV6, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+            socket.DualMode = true;
+            socket.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.IPv6Any, port));
+            socket.Listen(10);
+            Logger.LogInfo($"Dual-stack socket listening on port {port} (IPv4/IPv6)", new object[0]);
+        }
+
         public static void Scan(string path)
         {
             int port = 3310; // Example port for ClamAV

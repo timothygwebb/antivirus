@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using antivirus;
 
+
 namespace antivirus
 {
     public class Program
@@ -37,17 +38,10 @@ namespace antivirus
                     Logger.LogInfo("Using default path: " + defaultPath, new object[0]);
                 }
 
+
                 Logger.LogInfo("Starting scan for path: " + input, new object[0]);
                 Console.WriteLine("Scanning path: " + input);
 
-                // Simplify 'new' expressions and collection initializations
-                string[] urls = new string[] { "https://database.clamav.net/main.cvd", "https://database.clamav.net/daily.cvd", "https://database.clamav.net/bytecode.cvd" };
-
-                // Ensure ClamAV definitions are present
-                Scanner.EnsureDefinitionsDatabase();
-
-                // Download ClamAV zip if necessary
-                Scanner.DownloadClamAVZip();
 
                 // Advanced scan (ClamAV, heuristics, exclusions, browser recovery, quarantine)
                 Scanner.Scan(input);
