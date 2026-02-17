@@ -8,8 +8,21 @@ namespace antivirus
 {
     public class Program
     {
-        static void Main(string[] _)
+        static void Main(string[] args)
         {
+            // Support running browser repair in a separate process: if started with --browser-repair, run only that and exit
+            if (args != null && args.Length > 0 && args[0] == "--browser-repair")
+            {
+                try
+                {
+                    BrowserRepair.RepairBrowsers();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Browser repair process failed: " + ex.Message, Array.Empty<object>());
+                }
+                return;
+            }
             Console.WriteLine("Program execution started.");
             Logger.LogInfo("Program started", Array.Empty<object>());
 
