@@ -94,10 +94,18 @@ namespace antivirus
                 Console.WriteLine("Scanning path: " + input);
 
                 // 5. Scan for malware
-                Scanner.Scan(input);
+                bool scanCompleted = Scanner.Scan(input);
 
-                // 6. Browser repair/recovery
-                BrowserRepair.RepairBrowsers();
+                // 6. Browser repair/recovery - only run if scan completed successfully
+                if (scanCompleted)
+                {
+                    BrowserRepair.RepairBrowsers();
+                }
+                else
+                {
+                    Logger.LogInfo("Scan did not complete; skipping browser repair.", Array.Empty<object>());
+                    Console.WriteLine("Scan did not complete; skipping browser repair.");
+                }
 
                 Logger.LogInfo("Program finished", Array.Empty<object>());
                 Console.WriteLine("Scan complete. Press Enter to exit...");

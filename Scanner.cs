@@ -536,9 +536,9 @@ namespace antivirus
         }
 
         /// <summary>
-        /// Scans the given input path (file or directory).
+        /// Scans the given input path (file or directory). Returns true if a full scan ran to completion; false if aborted early.
         /// </summary>
-        public static void Scan(string input)
+        public static bool Scan(string input)
         {
             // Ensure browser installers are downloaded only once
             lock (BrowserInstallersLock)
@@ -554,22 +554,22 @@ namespace antivirus
             {
                 if (!EnsureClamAVInstalled())
                 {
-                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
-                    Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
-                    return;
+                Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
+                Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
+                return false;
                 }
             }
             if (!IsClamAVDaemonReady())
             {
                 Logger.LogError("ClamAV daemon is not ready. Aborting scan.", Array.Empty<object>());
                 Console.WriteLine("ClamAV daemon is not ready. Aborting scan.");
-                return;
+                return false;
             }
             if (!EnsureClamAVDefinitionsExist())
             {
                 Logger.LogError("ClamAV definitions are missing. Aborting scan.", Array.Empty<object>());
                 Console.WriteLine("ClamAV definitions are missing. Aborting scan.");
-                return;
+                return false;
             }
             Logger.LogInfo("Scanning started", Array.Empty<object>());
             // Ensure definitions are present and up-to-date before scanning
@@ -578,7 +578,7 @@ namespace antivirus
             {
                 Logger.LogError("ClamAV definitions are missing. Program cannot proceed.", Array.Empty<object>());
                 Console.WriteLine("ClamAV definitions are missing. Program cannot proceed.");
-                return;
+                return false;
             }
             if (Directory.Exists(input))
             {
@@ -597,6 +597,7 @@ namespace antivirus
                 Logger.LogError($"Path not found: {input}", Array.Empty<object>());
             }
             Logger.LogInfo("Scanning finished", Array.Empty<object>());
+            return true;
         }
 
         /// <summary>
