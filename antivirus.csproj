@@ -1,21 +1,18 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
     <StartupObject>antivirus.Program</StartupObject>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <RunAnalyzersDuringBuild>False</RunAnalyzersDuringBuild>
-    <RunAnalyzersDuringLiveAnalysis>False</RunAnalyzersDuringLiveAnalysis>
-    <EnableNETAnalyzers>False</EnableNETAnalyzers>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include=".github\copilot-instructions.md" />
+    <!-- Removed explicit inclusion of Logger.cs to avoid duplicate 'Compile' items error -->
   </ItemGroup>
 
 </Project>
