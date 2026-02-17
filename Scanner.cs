@@ -40,8 +40,15 @@ namespace antivirus
 
         public static void Scan(string path)
         {
+            int port = 3310; // Example port for ClamAV
+            AddFirewallRules(port);
+            InitializeDualStackSocket(port);
             Console.WriteLine("Scanning path: " + path);
             Logger.LogInfo("Scanning path: " + path, new object[0]);
+            // Example IP address parsing
+            string ipStr = "::1"; // IPv6 loopback
+            var ip = System.Net.IPAddress.Parse(ipStr);
+            Logger.LogInfo($"Parsed IP address: {ip}", new object[0]);
         }
 
         public static bool EnsureClamAVInstalled()
