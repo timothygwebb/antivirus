@@ -233,12 +233,22 @@ namespace antivirus
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                return new[] {
-                    ("Chrome", Path.Combine(InstallerDir, "ChromeSetup.exe"), true),
-                    ("Firefox", Path.Combine(InstallerDir, "FirefoxSetup.exe"), true),
-                    ("Opera", Path.Combine(InstallerDir, "OperaSetup.exe"), true),
-                    ("K-Meleon", Path.Combine(InstallerDir, "K-MeleonSetup.exe"), true)
-                };
+                if (IsLegacyWindows())
+                {
+                    return new[] {
+                        ("K-Meleon", Path.Combine(InstallerDir, "K-Meleon1.5.4.exe"), true),
+                        ("RetroZilla", Path.Combine(InstallerDir, "RetroZilla-2.2.exe"), true)
+                    };
+                }
+                else
+                {
+                    return new[] {
+                        ("Chrome", Path.Combine(InstallerDir, "ChromeSetup.exe"), true),
+                        ("Firefox", Path.Combine(InstallerDir, "FirefoxSetup.exe"), true),
+                        ("Opera", Path.Combine(InstallerDir, "OperaSetup.exe"), true),
+                        ("K-Meleon", Path.Combine(InstallerDir, "K-MeleonSetup.exe"), true)
+                    };
+                }
             }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
@@ -260,6 +270,12 @@ namespace antivirus
             }
 
             return Array.Empty<(string, string, bool)>();
+        }
+
+        private static bool IsLegacyWindows()
+        {
+            var os = Environment.OSVersion;
+            return os.Platform == PlatformID.Win32Windows && (os.Version.Major < 5); // Windows Me/98/95
         }
 
         private static (string browserId, string installerPath, bool isLocalInstaller)[] LoadInstallersFromConfig()

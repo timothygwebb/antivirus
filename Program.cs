@@ -25,16 +25,43 @@ namespace antivirus
             if (IsLegacyWindows())
             {
                 Logger.LogInfo("Running in legacy compatibility mode.", Array.Empty<object>());
-                // Call legacy entry point if available
                 try
                 {
-                    var legacyType = Type.GetType("antivirus.Program_Backup");
-                    var legacyMain = legacyType?.GetMethod("Main");
-                    legacyMain?.Invoke(null, new object[] { new string[0] });
+                    // Launch legacy process if available (antivirus.Legacy.exe)
+                    string legacyExe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "antivirus.Legacy.exe");
+                    if (File.Exists(legacyExe))
+                    {
+                        var proc = new Process();
+                        proc.StartInfo = new ProcessStartInfo
+                        {
+                            FileName = legacyExe,
+                            UseShellExecute = true
+                        };
+                        proc.Start();
+                        Logger.LogInfo("Launched legacy antivirus process.", Array.Empty<object>());
+                    }
+                    else
+                    {
+                        // Fallback: call legacy entry point if running in same process
+                        var legacyType = Type.GetType("antivirus.Program_Backup");
+                        var legacyMain = legacyType?.GetMethod("Main");
+                        if (legacyMain != null)
+                        {
+                            // Ensure legacy browser installers are present
+                            var browserInstallersType = Type.GetType("antivirus.Legacy.BrowserInstallers_Legacy");
+                            var ensureMethod = browserInstallersType?.GetMethod("EnsureLegacyBrowserInstallers");
+                            ensureMethod?.Invoke(null, null);
+                            legacyMain.Invoke(null, new object[] { new string[0] });
+                        }
+                        else
+                        {
+                            Logger.LogError("No legacy entry point found.", Array.Empty<object>());
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("Failed to invoke legacy entry point: " + ex.Message, Array.Empty<object>());
+                    Logger.LogError("Failed to launch legacy process: " + ex.Message, Array.Empty<object>());
                 }
                 return;
             }
@@ -89,7 +116,10 @@ namespace antivirus
                     return;
                 }
 
-                // 4. Get scan path
+                // 4. Ensure browser installers for current OS
+                Scanner.EnsureBrowserInstallers();
+
+                // 5. Get scan path
                 Console.WriteLine("Enter a file or directory path to scan. Press Enter to use the default user profile directory:");
                 string defaultPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
                 string input = Console.ReadLine();
@@ -101,10 +131,10 @@ namespace antivirus
                 Logger.LogInfo("Starting scan for path: " + input, Array.Empty<object>());
                 Console.WriteLine("Scanning path: " + input);
 
-                // 5. Scan for malware
+                // 6. Scan for malware
                 bool scanCompleted = Scanner.Scan(input);
 
-                // 6. Launch browser repair as a separate process if scan completed
+                // 7. Launch browser repair as a separate process if scan completed
                 if (scanCompleted)
                 {
                     try

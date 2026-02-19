@@ -1,15 +1,12 @@
-#nullable enable
 using antivirus;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
-using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace antivirus
 {
@@ -24,12 +21,12 @@ namespace antivirus
         private static readonly object BrowserInstallersLock = new object();
         private static bool BrowserInstallersInitialized = false;
 
-        private static readonly HashSet<string> ExcludedExtensions = new()
+        private static readonly HashSet<string> ExcludedExtensions = new HashSet<string>
         {
             ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml"
         };
         private static readonly string[] ExcludedFolders = { "bin", "obj", ".git" };
-        private static readonly HashSet<string> ExcludedFiles = new()
+        private static readonly HashSet<string> ExcludedFiles = new HashSet<string>
         {
             "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys"
         };
@@ -163,7 +160,7 @@ namespace antivirus
                             {
                                 string relPath = Path.GetRelativePath(subDir, file);
                                 string destPath = Path.Combine(ClamAVDir, relPath);
-                                Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                                Directory.CreateDirectory(Path.GetDirectoryName(destPath));
                                 File.Move(file, destPath, true);
                             }
                             foreach (var dir in Directory.GetDirectories(subDir, "*", SearchOption.AllDirectories))
@@ -399,16 +396,16 @@ namespace antivirus
         /// </summary>
         private static void ScanFile(string filePath)
         {
-            string? clamResult = ScanWithClamAVTcp(filePath);
+            string clamResult = ScanWithClamAVTcp(filePath);
             if (clamResult != null)
             {
-                if (clamResult.Contains("FOUND", StringComparison.OrdinalIgnoreCase))
+                if (clamResult.IndexOf("FOUND", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     Logger.LogError($"ClamAV detected threat: {clamResult}", Array.Empty<object>());
                     Quarantine.QuarantineFile(filePath);
                     return;
                 }
-                else if (clamResult.Contains("OK", StringComparison.OrdinalIgnoreCase))
+                else if (clamResult.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     Logger.LogResult($"File clean: {filePath}", Array.Empty<object>());
                     return;
@@ -427,7 +424,7 @@ namespace antivirus
             // Removed nested try block and moved ClamAV TCP scan logic to its own method
         }
 
-        private static string? ScanWithClamAVTcp(string filePath)
+        private static string ScanWithClamAVTcp(string filePath)
         {
             const int maxAttempts = 6;
             const int baseDelayMs = 500;
@@ -441,41 +438,63 @@ namespace antivirus
                         int timeout = 2000 + attempt * 1000; // increase timeout each attempt
                         if (!connectTask.Wait(timeout) || !client.Connected)
                             throw new SocketException();
-                        using var stream = client.GetStream();
-                        byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
-                        stream.Write(cmd, 0, cmd.Length);
-                        using var file = File.OpenRead(filePath);
-                        byte[] buffer = new byte[2048];
-                        int bytesRead;
-                        while ((bytesRead = file.Read(buffer, 0, buffer.Length)) > 0)
+                        using (var stream = client.GetStream())
                         {
-                            byte[] size = new byte[4];
-                            size[0] = (byte)((bytesRead >> 24) & 0xFF);
-                            size[1] = (byte)((bytesRead >> 16) & 0xFF);
-                            size[2] = (byte)((bytesRead >> 8) & 0xFF);
-                            size[3] = (byte)(bytesRead & 0xFF);
-                            stream.Write(size, 0, size.Length);
-                            stream.Write(buffer, 0, bytesRead);
+                            byte[] cmd = Encoding.ASCII.GetBytes("zINSTREAM\0");
+                            stream.Write(cmd, 0, cmd.Length);
+                            using (var file = File.OpenRead(filePath))
+                            {
+                                byte[] buffer = new byte[2048];
+                                int bytesRead;
+                                while ((bytesRead = file.Read(buffer, 0, buffer.Length)) > 0)
+                                {
+                                    byte[] size = new byte[4];
+                                    size[0] = (byte)((bytesRead >> 24) & 0xFF);
+                                    size[1] = (byte)((bytesRead >> 16) & 0xFF);
+                                    size[2] = (byte)((bytesRead >> 8) & 0xFF);
+                                    size[3] = (byte)(bytesRead & 0xFF);
+                                    stream.Write(size, 0, size.Length);
+                                    stream.Write(buffer, 0, bytesRead);
+                                }
+                            }
+                            stream.Write(new byte[4], 0, 4);
+                            using (var ms = new MemoryStream())
+                            {
+                                byte[] respBuffer = new byte[1024];
+                                int respBytes = stream.Read(respBuffer, 0, respBuffer.Length);
+                                ms.Write(respBuffer, 0, respBytes);
+                                return Encoding.ASCII.GetString(ms.ToArray());
+                            }
                         }
-                        stream.Write(new byte[4], 0, 4);
-                        using var ms = new MemoryStream();
-                        byte[] respBuffer = new byte[1024];
-                        int respBytes = stream.Read(respBuffer, 0, respBuffer.Length);
-                        ms.Write(respBuffer, 0, respBytes);
-                        return Encoding.ASCII.GetString(ms.ToArray());
                     }
                 }
-                catch (SocketException ex) when (attempt < maxAttempts)
+                catch (SocketException ex)
                 {
-                    Logger.LogWarning($"ClamAV connection failed (attempt {attempt}): {ex.Message}", Array.Empty<object>());
-                    int sleep = baseDelayMs * (int)Math.Pow(2, attempt - 1);
-                    System.Threading.Thread.Sleep(Math.Min(sleep, 10000));
+                    if (attempt < maxAttempts)
+                    {
+                        Logger.LogWarning($"ClamAV connection failed (attempt {attempt}): {ex.Message}", Array.Empty<object>());
+                        int sleep = baseDelayMs * (int)Math.Pow(2, attempt - 1);
+                        System.Threading.Thread.Sleep(Math.Min(sleep, 10000));
+                    }
+                    else
+                    {
+                        Logger.LogWarning($"ClamAV scan failed after {0} attempts.", new object[] { maxAttempts });
+                        return null;
+                    }
                 }
-                catch (ObjectDisposedException ex) when (attempt < maxAttempts)
+                catch (ObjectDisposedException ex)
                 {
-                    Logger.LogWarning($"ClamAV socket disposed early (attempt {attempt}): {ex.Message}", Array.Empty<object>());
-                    int sleep = baseDelayMs * (int)Math.Pow(2, attempt - 1);
-                    System.Threading.Thread.Sleep(Math.Min(sleep, 10000));
+                    if (attempt < maxAttempts)
+                    {
+                        Logger.LogWarning($"ClamAV socket disposed early (attempt {attempt}): {ex.Message}", Array.Empty<object>());
+                        int sleep = baseDelayMs * (int)Math.Pow(2, attempt - 1);
+                        System.Threading.Thread.Sleep(Math.Min(sleep, 10000));
+                    }
+                    else
+                    {
+                        Logger.LogWarning($"ClamAV scan failed after {0} attempts.", new object[] { maxAttempts });
+                        return null;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -483,7 +502,7 @@ namespace antivirus
                     return null;
                 }
             }
-            Logger.LogWarning($"ClamAV scan failed after {maxAttempts} attempts.", Array.Empty<object>());
+            Logger.LogWarning($"ClamAV scan failed after {0} attempts.", new object[] { maxAttempts });
             return null;
         }
 
@@ -604,13 +623,20 @@ namespace antivirus
         {
             string installersDir = Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers");
             Directory.CreateDirectory(installersDir);
-            var browsers = new (string Name, string Url, string File)[]
-            {
-                ("Chrome", ChromeUrl, Path.Combine(installersDir, "ChromeSetup.exe")),
-                ("Firefox", FirefoxUrl, Path.Combine(installersDir, "FirefoxSetup.exe")),
-                ("Opera", OperaSetupUrl, Path.Combine(installersDir, "OperaSetup.exe")),
-                ("K-Meleon", KmeleonSetupUrl, Path.Combine(installersDir, "K-MeleonSetup.exe")),
-            };
+            bool isLegacy = IsLegacyWindows();
+            var browsers = isLegacy
+                ? new (string Name, string Url, string File)[]
+                {
+                    ("K-Meleon", "https://downloads.sourceforge.net/project/kmeleon/k-meleon/1.5.4/K-Meleon1.5.4.exe", Path.Combine(installersDir, "K-Meleon1.5.4.exe")),
+                    ("RetroZilla", "https://o.rthost.win/gpc/files1.rt/retrozilla-2.2.exe", Path.Combine(installersDir, "RetroZilla-2.2.exe"))
+                }
+                : new (string Name, string Url, string File)[]
+                {
+                    ("Chrome", ChromeUrl, Path.Combine(installersDir, "ChromeSetup.exe")),
+                    ("Firefox", FirefoxUrl, Path.Combine(installersDir, "FirefoxSetup.exe")),
+                    ("Opera", OperaSetupUrl, Path.Combine(installersDir, "OperaSetup.exe")),
+                    ("K-Meleon", KmeleonSetupUrl, Path.Combine(installersDir, "K-MeleonSetup.exe")),
+                };
             foreach (var (name, url, file) in browsers)
             {
                 if (!File.Exists(file))
@@ -627,6 +653,12 @@ namespace antivirus
                     }
                 }
             }
+        }
+
+        private static bool IsLegacyWindows()
+        {
+            var os = Environment.OSVersion;
+            return os.Platform == PlatformID.Win32Windows && (os.Version.Major < 5); // Windows Me/98/95
         }
     }
 }
