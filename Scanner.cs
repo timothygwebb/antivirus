@@ -1,58 +1,173 @@
-using antivirus;
 using System;
 using System.Diagnostics;
-using System.Collections.Generic;
+using System.Collections;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace antivirus
 {
-    /// <summary>
-    /// Provides scanning and ClamAV integration for the antivirus application.
-    /// </summary>
     public static class Scanner
     {
-        // Guard to prevent repeated ClamAV initialization and duplicate actions/logging
         private static readonly object ClamAVInitLock = new object();
         private static bool ClamAVInitialized = false;
         private static readonly object BrowserInstallersLock = new object();
         private static bool BrowserInstallersInitialized = false;
 
-        private static readonly HashSet<string> ExcludedExtensions = new HashSet<string>
+        private static readonly ArrayList ExcludedExtensions = new ArrayList
         {
             ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml"
         };
         private static readonly string[] ExcludedFolders = { "bin", "obj", ".git" };
-        private static readonly HashSet<string> ExcludedFiles = new HashSet<string>
+        private static readonly ArrayList ExcludedFiles = new ArrayList
         {
             "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys"
         };
-        // Removed unused field clamAvWarned
-		private static readonly string ClamAVDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClamAV");
+        private static readonly string ClamAVDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClamAV");
         private static readonly string ClamdExe = Path.Combine(ClamAVDir, "clamd.exe");
         private static readonly string ClamAVZipUrl = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
         private static readonly string KmeleonUrl = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
         private static readonly string OperaUrl = "https://www.opera.com/computer/thanks?ni=stable_portable&os=windows";
-        // URLs for browser installers
         private static readonly string ChromeUrl = "https://dl.google.com/chrome/install/latest/chrome_installer.exe";
         private static readonly string FirefoxUrl = "https://download.mozilla.org/?product=firefox-latest&os=win&lang=en-US";
         private static readonly string OperaSetupUrl = "https://net.geo.opera.com/opera/stable/windows";
         private static readonly string KmeleonSetupUrl = "https://downloads.sourceforge.net/project/kmeleon/k-meleon/76.4.7/K-Meleon76.4.7.exe";
 
+        private static void DownloadFile(string url, string filePath)
+        {
+            try
+            {
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (Stream responseStream = response.GetResponseStream())
+                using (FileStream fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+                {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = responseStream.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        fileStream.Write(buffer, 0, bytesRead);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Error downloading file: " + ex.Message, new object[0]);
+            }
+        }
+
+        private static void ExtractZipFile(string zipFilePath, string extractPath)
+        {
+            try
+            {
+                using (FileStream zipToOpen = new FileStream(zipFilePath, FileMode.Open))
+                using (System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(zipToOpen, System.IO.Compression.ZipArchiveMode.Read))
+                {
+                    foreach (System.IO.Compression.ZipArchiveEntry entry in archive.Entries)
+                    {
+                        string destinationPath = Path.Combine(extractPath, entry.FullName);
+                        if (string.IsNullOrEmpty(entry.Name))
+                        {
+                            Directory.CreateDirectory(destinationPath);
+                        }
+                        else
+                        {
+                            entry.ExtractToFile(destinationPath, true);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Error extracting zip file: " + ex.Message, new object[0]);
+            }
+        }
+
+        private static string GetRelativePath(string basePath, string fullPath)
+        {
+            Uri baseUri = new Uri(basePath);
+            Uri fullUri = new Uri(fullPath);
+            return Uri.UnescapeDataString(baseUri.MakeRelativeUri(fullUri).ToString().Replace('/', Path.DirectorySeparatorChar));
+        }
+
+        private static void MoveFile(string sourceFilePath, string destinationFilePath)
+        {
+            if (File.Exists(destinationFilePath))
+            {
+                File.Delete(destinationFilePath);
+            }
+            File.Move(sourceFilePath, destinationFilePath);
+        }
+
+        private static bool ContainsIgnoreCase(string source, string value)
+        {
+            return source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool EndsWithIgnoreCase(string source, string value)
+        {
+            return source.EndsWith(value, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string TrimEnd(string source, char trimChar)
+        {
+            return source.TrimEnd(trimChar);
+        }
+
+        // Guard to prevent repeated ClamAV initialization and duplicate actions/logging
+        private static readonly object ClamAVInitLock2 = new object();
+        private static bool ClamAVInitialized2 = false;
+        private static readonly object BrowserInstallersLock2 = new object();
+        private static bool BrowserInstallersInitialized2 = false;
+
+        private static readonly ArrayList ExcludedExtensions2 = new ArrayList
+        {
+            ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml"
+        };
+        private static readonly string[] ExcludedFolders2 = { "bin", "obj", ".git" };
+        private static readonly ArrayList ExcludedFiles2 = new ArrayList
+        {
+            "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys"
+        };
+        private static readonly string ClamAVDir2 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClamAV");
+        private static readonly string ClamdExe2 = Path.Combine(ClamAVDir2, "clamd.exe");
+        private static readonly string ClamAVZipUrl2 = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
+        private static readonly string KmeleonUrl2 = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
+        private static readonly string OperaUrl2 = "https://www.opera.com/computer/thanks?ni=stable_portable&os=windows";
+        // URLs for browser installers
+        private static readonly string ChromeUrl2 = "https://dl.google.com/chrome/install/latest/chrome_installer.exe";
+        private static readonly string FirefoxUrl2 = "https://download.mozilla.org/?product=firefox-latest&os=win&lang=en-US";
+        private static readonly string OperaSetupUrl2 = "https://net.geo.opera.com/opera/stable/windows";
+        private static readonly string KmeleonSetupUrl2 = "https://downloads.sourceforge.net/project/kmeleon/k-meleon/76.4.7/K-Meleon76.4.7.exe";
+
 
         /// <summary>
         /// Downloads a file asynchronously using HttpClient.
         /// </summary>
-        private static async Task DownloadFileAsync(string url, string filePath)
+        private static void DownloadFile2(string url, string filePath)
         {
-            using var httpClient = new HttpClient();
-            using var response = await httpClient.GetAsync(url);
-            response.EnsureSuccessStatusCode();
-            await using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-            await response.Content.CopyToAsync(fs);
+            try
+            {
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (Stream responseStream = response.GetResponseStream())
+                using (FileStream fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+                {
+                    byte[] buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = responseStream.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        fileStream.Write(buffer, 0, bytesRead);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Error downloading file: " + ex.Message, new object[0]);
+            }
         }
 
         /// <summary>
@@ -74,30 +189,32 @@ namespace antivirus
                         RedirectStandardOutput = true,
                         RedirectStandardError = true
                     };
-                    using var process = Process.Start(startInfo);
-                    if (process != null)
+                    using (var process = Process.Start(startInfo))
                     {
-                        string output = process.StandardOutput.ReadToEnd();
-                        string error = process.StandardError.ReadToEnd();
-                        process.WaitForExit();
-                        Logger.LogInfo($"freshclam output: {output}", Array.Empty<object>());
-                        if (!string.IsNullOrEmpty(error))
-                            Logger.LogWarning($"freshclam error: {error}", Array.Empty<object>());
-                        // If freshclam succeeded, notify the definitions manager
-                        if (process.ExitCode == 0)
+                        if (process != null)
                         {
-                            try { ClamAVDefinitionsManager.NotifyUpdated(); } catch { }
+                            string output = process.StandardOutput.ReadToEnd();
+                            string error = process.StandardError.ReadToEnd();
+                            process.WaitForExit();
+                            Logger.LogInfo($"freshclam output: {output}", new object[0]);
+                            if (!string.IsNullOrEmpty(error))
+                                Logger.LogWarning($"freshclam error: {error}", new object[0]);
+                            // If freshclam succeeded, notify the definitions manager
+                            if (process.ExitCode == 0)
+                            {
+                                try { ClamAVDefinitionsManager.NotifyUpdated(); } catch { }
+                            }
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning($"Failed to run freshclam: {ex.Message}", Array.Empty<object>());
+                    Logger.LogWarning($"Failed to run freshclam: {ex.Message}", new object[0]);
                 }
             }
             else
             {
-                Logger.LogWarning("freshclam.exe not found. ClamAV definitions will not be updated automatically.", Array.Empty<object>());
+                Logger.LogWarning("freshclam.exe not found. ClamAV definitions will not be updated automatically.", new object[0]);
             }
         }
 
@@ -114,11 +231,11 @@ namespace antivirus
                 string name = Path.GetFileName(file);
                 if (!allowedExtensions.Contains(ext) && !allowedFiles.Contains(name))
                 {
-                    try { File.Delete(file); Logger.LogInfo($"Deleted non-database file from ClamAV directory: {name}", Array.Empty<object>()); } catch { }
+                    try { File.Delete(file); Logger.LogInfo($"Deleted non-database file from ClamAV directory: {name}", new object[0]); } catch { }
                 }
-                if (ext.Equals(".pdb", StringComparison.OrdinalIgnoreCase))
+                    foreach (string file in Directory.GetFiles(ClamAVDir))
                 {
-                    try { File.Delete(file); Logger.LogInfo($"Deleted .pdb file from ClamAV directory: {name}", Array.Empty<object>()); } catch { }
+                    try { File.Delete(file); Logger.LogInfo($"Deleted .pdb file from ClamAV directory: {name}", new object[0]); } catch { }
                 }
             }
         }
@@ -140,7 +257,7 @@ namespace antivirus
                 // 1. Download and extract ClamAV if needed
                 if (!File.Exists(ClamdExe))
                 {
-                    Logger.LogWarning($"ClamAV not found: {ClamdExe}. Attempting to download...", Array.Empty<object>());
+                    Logger.LogWarning($"ClamAV not found: {ClamdExe}. Attempting to download...", new object[0]);
                     Console.WriteLine($"ClamAV not found: {ClamdExe}. Attempting to download...");
                     try
                     {
@@ -148,36 +265,38 @@ namespace antivirus
                         {
                             ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
                         };
-                        using var httpClient = new HttpClient(handler);
-                        string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
-                        DownloadFileAsync(ClamAVZipUrl, tempZip).GetAwaiter().GetResult();
-                        ZipFile.ExtractToDirectory(tempZip, ClamAVDir, true);
-                        var dirs = Directory.GetDirectories(ClamAVDir);
-                        if (dirs.Length == 1)
+                        using (var httpClient = new HttpClient(handler))
                         {
-                            string subDir = dirs[0];
-                            foreach (var file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
+                            string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
+                            DownloadFile2(ClamAVZipUrl, tempZip);
+                            ExtractZipFile(tempZip, ClamAVDir);
+                            var dirs = Directory.GetDirectories(ClamAVDir);
+                            if (dirs.Length == 1)
                             {
-                                string relPath = Path.GetRelativePath(subDir, file);
-                                string destPath = Path.Combine(ClamAVDir, relPath);
-                                Directory.CreateDirectory(Path.GetDirectoryName(destPath));
-                                File.Move(file, destPath, true);
+                                string subDir = dirs[0];
+                                foreach (var file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
+                                {
+                                    string relPath = GetRelativePath(subDir, file);
+                                    string destPath = Path.Combine(ClamAVDir, relPath);
+                                    Directory.CreateDirectory(Path.GetDirectoryName(destPath));
+                                    MoveFile(file, destPath);
+                                }
+                                foreach (var dir in Directory.GetDirectories(subDir, "*", SearchOption.AllDirectories))
+                                {
+                                    string relPath = GetRelativePath(subDir, dir);
+                                    string destPath = Path.Combine(ClamAVDir, relPath);
+                                    Directory.CreateDirectory(destPath);
+                                }
+                                Directory.Delete(subDir, true);
+                                Logger.LogInfo($"Moved ClamAV files from subdirectory '{Path.GetFileName(subDir)}' to '{ClamAVDir}'.", new object[0]);
                             }
-                            foreach (var dir in Directory.GetDirectories(subDir, "*", SearchOption.AllDirectories))
-                            {
-                                string relPath = Path.GetRelativePath(subDir, dir);
-                                string destPath = Path.Combine(ClamAVDir, relPath);
-                                Directory.CreateDirectory(destPath);
-                            }
-                            Directory.Delete(subDir, true);
-                            Logger.LogInfo($"Moved ClamAV files from subdirectory '{Path.GetFileName(subDir)}' to '{ClamAVDir}'.", Array.Empty<object>());
+                            Logger.LogInfo("ClamAV downloaded and extracted.", new object[0]);
+                            Console.WriteLine("ClamAV downloaded and extracted.");
                         }
-                        Logger.LogInfo("ClamAV downloaded and extracted.", Array.Empty<object>());
-                        Console.WriteLine("ClamAV downloaded and extracted.");
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogError($"Failed to download or extract ClamAV: {ex.Message}", Array.Empty<object>());
+                        Logger.LogError($"Failed to download or extract ClamAV: {ex.Message}", new object[0]);
                         Console.WriteLine("Failed to download or extract ClamAV. Please download and extract it manually from https://www.clamav.net/downloads.");
                         return false;
                     }
@@ -195,11 +314,11 @@ namespace antivirus
                             "DatabaseMirror database.clamav.net"
                         };
                         File.WriteAllLines(freshclamConf, conf);
-                        Logger.LogInfo("Created default freshclam.conf for ClamAV.", Array.Empty<object>());
+                        Logger.LogInfo("Created default freshclam.conf for ClamAV.", new object[0]);
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogWarning($"Failed to create freshclam.conf: {ex.Message}", Array.Empty<object>());
+                        Logger.LogWarning($"Failed to create freshclam.conf: {ex.Message}", new object[0]);
                     }
                 }
                 string clamdConf = Path.Combine(ClamAVDir, "clamd.conf");
@@ -219,11 +338,11 @@ namespace antivirus
                             "ScanMail false"
                         };
                         File.WriteAllLines(clamdConf, conf);
-                        Logger.LogInfo("Created default clamd.conf for ClamAV.", Array.Empty<object>());
+                        Logger.LogInfo("Created default clamd.conf for ClamAV.", new object[0]);
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogWarning($"Failed to create clamd.conf: {ex.Message}", Array.Empty<object>());
+                        Logger.LogWarning($"Failed to create clamd.conf: {ex.Message}", new object[0]);
                     }
                 }
 
@@ -234,7 +353,7 @@ namespace antivirus
                     if (ClamAVDefinitionsManager.ShouldAttemptUpdate())
                         UpdateClamAVDatabase();
                     else
-                        Logger.LogInfo("Skipping freshclam update because a recent attempt was made.", Array.Empty<object>());
+                        Logger.LogInfo("Skipping freshclam update because a recent attempt was made.", new object[0]);
                 }
                 catch { }
 
@@ -243,7 +362,7 @@ namespace antivirus
                     var clamdProcesses = Process.GetProcessesByName("clamd");
                     if (clamdProcesses.Length > 0)
                     {
-                        Logger.LogInfo($"Found existing clamd.exe processes: {clamdProcesses.Length}. Attempting to use existing daemon.", Array.Empty<object>());
+                        Logger.LogInfo($"Found existing clamd.exe processes: {clamdProcesses.Length}. Attempting to use existing daemon.", new object[0]);
                         // If existing clamd processes exist, assume daemon is ready
                         ClamAVInitialized = true;
                         return true;
@@ -263,20 +382,20 @@ namespace antivirus
                         var clamdProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
                         if (clamdProcess.Start())
                         {
-                            Logger.LogInfo("clamd.exe started by application.", Array.Empty<object>());
+                            Logger.LogInfo("clamd.exe started by application.", new object[0]);
                             ClamAVInitialized = true;
                             return true;
                         }
                         else
                         {
-                            Logger.LogError("Failed to start clamd.exe process.", Array.Empty<object>());
+                            Logger.LogError("Failed to start clamd.exe process.", new object[0]);
                             return false;
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError($"Failed to start ClamAV daemon: {ex.Message}", Array.Empty<object>());
+                    Logger.LogError($"Failed to start ClamAV daemon: {ex.Message}", new object[0]);
                     return false;
                 }
 
@@ -296,30 +415,30 @@ namespace antivirus
             try
             {
                 using var httpClient = new HttpClient();
-                Logger.LogInfo("Attempting to download K-Meleon browser...", Array.Empty<object>());
-                DownloadFileAsync(KmeleonUrl, kmeleonInstaller).GetAwaiter().GetResult();
-                Logger.LogInfo("K-Meleon browser downloaded. Please extract and run manually if needed.", Array.Empty<object>());
+                Logger.LogInfo("Attempting to download K-Meleon browser...", new object[0]);
+                DownloadFile(KmeleonUrl, kmeleonInstaller);
+                Logger.LogInfo("K-Meleon browser downloaded. Please extract and run manually if needed.", new object[0]);
                 Console.WriteLine("K-Meleon browser downloaded as archive. Please extract and run manually if needed.");
                 Process.Start("explorer.exe", $"/select,\"{kmeleonInstaller}\"");
                 return;
             }
             catch (Exception ex)
             {
-                Logger.LogWarning($"Failed to download K-Meleon browser: {ex.Message}", Array.Empty<object>());
+                Logger.LogWarning($"Failed to download K-Meleon browser: {ex.Message}", new object[0]);
             }
             // Try Opera as fallback
             try
             {
                 using var httpClient = new HttpClient();
-                Logger.LogInfo("Attempting to download Opera browser...", Array.Empty<object>());
-                DownloadFileAsync(OperaUrl, operaInstaller).GetAwaiter().GetResult();
-                Logger.LogInfo("Opera browser downloaded. Please run manually if needed.", Array.Empty<object>());
+                Logger.LogInfo("Attempting to download Opera browser...", new object[0]);
+                DownloadFile(OperaUrl, operaInstaller);
+                Logger.LogInfo("Opera browser downloaded. Please run manually if needed.", new object[0]);
                 Console.WriteLine("Opera browser downloaded. Please run manually if needed.");
                 Process.Start("explorer.exe", $"/select,\"{operaInstaller}\"");
             }
             catch (Exception ex)
             {
-                Logger.LogError($"Failed to download Opera browser: {ex.Message}", Array.Empty<object>());
+                Logger.LogError($"Failed to download Opera browser: {ex.Message}", new object[0]);
                 Console.WriteLine("Failed to download both K-Meleon and Opera browsers. Please download and install a browser manually.");
             }
         }
@@ -332,12 +451,12 @@ namespace antivirus
         {
             try
             {
-                foreach (var file in Directory.GetFiles(path))
+                foreach (string file in Directory.GetFiles(path))
                 {
                     if (ShouldSkipFile(file)) continue;
                     ScanFile(file);
                 }
-                foreach (var dir in Directory.GetDirectories(path))
+                foreach (string dir in Directory.GetDirectories(path))
                 {
                     if (ShouldSkipDir(dir)) continue;
                     ScanDirectorySafe(dir);
@@ -345,27 +464,27 @@ namespace antivirus
             }
             catch (UnauthorizedAccessException ex)
             {
-                Logger.LogWarning($"Access denied to directory: {path} ({ex.Message})", Array.Empty<object>());
+                Logger.LogWarning($"Access denied to directory: {path} ({ex.Message})", new object[0]);
             }
             catch (IOException ex)
             {
-                Logger.LogWarning($"IO error in directory: {path} ({ex.Message})", Array.Empty<object>());
+                Logger.LogWarning($"IO error in directory: {path} ({ex.Message})", new object[0]);
             }
         }
 
         /// <summary>
         /// Determines if a directory should be skipped based on exclusion rules.
         /// </summary>
-        private static bool ShouldSkipDir(string dirPath)
-        {
-            string dirName = Path.GetFileName(dirPath);
-            foreach (var folder in ExcludedFolders)
-            {
-                if (dirName.Equals(folder, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-            return false;
-        }
+                private static bool ShouldSkipDir(string dirPath)
+                {
+                    string dirName = Path.GetFileName(dirPath);
+                    foreach (var folder in ExcludedFolders)
+                    {
+                        if (dirName.Equals(folder, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                    return false;
+                }
 
         /// <summary>
         /// Determines if a file should be skipped based on exclusion rules.
@@ -401,13 +520,13 @@ namespace antivirus
             {
                 if (clamResult.IndexOf("FOUND", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    Logger.LogError($"ClamAV detected threat: {clamResult}", Array.Empty<object>());
+                    Logger.LogError($"ClamAV detected threat: {clamResult}", new object[0]);
                     Quarantine.QuarantineFile(filePath);
                     return;
                 }
                 else if (clamResult.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    Logger.LogResult($"File clean: {filePath}", Array.Empty<object>());
+                    Logger.LogResult($"File clean: {filePath}", new object[0]);
                     return;
                 }
             }
@@ -415,11 +534,11 @@ namespace antivirus
             bool heuristicThreat = filePath.Contains("virus", StringComparison.OrdinalIgnoreCase) || new FileInfo(filePath).Length > 10_000_000;
             if (heuristicThreat)
             {
-                Logger.LogWarning($"Heuristic threat detected: {filePath}", Array.Empty<object>());
+                Logger.LogWarning($"Heuristic threat detected: {filePath}", new object[0]);
             }
             else
             {
-                Logger.LogResult($"File clean: {filePath}", Array.Empty<object>());
+                Logger.LogResult($"File clean: {filePath}", new object[0]);
             }
             // Removed nested try block and moved ClamAV TCP scan logic to its own method
         }
@@ -472,7 +591,7 @@ namespace antivirus
                 {
                     if (attempt < maxAttempts)
                     {
-                        Logger.LogWarning($"ClamAV connection failed (attempt {attempt}): {ex.Message}", Array.Empty<object>());
+                        Logger.LogWarning($"ClamAV connection failed (attempt {attempt}): {ex.Message}", new object[0]);
                         int sleep = baseDelayMs * (int)Math.Pow(2, attempt - 1);
                         System.Threading.Thread.Sleep(Math.Min(sleep, 10000));
                     }
@@ -486,7 +605,7 @@ namespace antivirus
                 {
                     if (attempt < maxAttempts)
                     {
-                        Logger.LogWarning($"ClamAV socket disposed early (attempt {attempt}): {ex.Message}", Array.Empty<object>());
+                        Logger.LogWarning($"ClamAV socket disposed early (attempt {attempt}): {ex.Message}", new object[0]);
                         int sleep = baseDelayMs * (int)Math.Pow(2, attempt - 1);
                         System.Threading.Thread.Sleep(Math.Min(sleep, 10000));
                     }
@@ -498,7 +617,7 @@ namespace antivirus
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning($"ClamAV scan failed: {ex.Message}", Array.Empty<object>());
+                    Logger.LogWarning($"ClamAV scan failed: {ex.Message}", new object[0]);
                     return null;
                 }
             }
@@ -516,35 +635,35 @@ namespace antivirus
             {
                 if (!EnsureClamAVInstalled())
                 {
-                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
+                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", new object[0]);
                     Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
                     return false;
                 }
             }
             if (!IsClamAVDaemonReady())
             {
-                Logger.LogError("ClamAV daemon is not ready. Aborting scan.", Array.Empty<object>());
+                Logger.LogError("ClamAV daemon is not ready. Aborting scan.", new object[0]);
                 Console.WriteLine("ClamAV daemon is not ready. Aborting scan.");
                 return false;
             }
             if (!EnsureClamAVDefinitionsExist())
             {
-                Logger.LogError("ClamAV definitions are missing. Aborting scan.", Array.Empty<object>());
+                Logger.LogError("ClamAV definitions are missing. Aborting scan.", new object[0]);
                 Console.WriteLine("ClamAV definitions are missing. Aborting scan.");
                 return false;
             }
-            Logger.LogInfo("Scanning started", Array.Empty<object>());
+            Logger.LogInfo("Scanning started", new object[0]);
             // Ensure definitions are present and up-to-date before scanning
             ClamAVDefinitionsManager.EnsureDefinitionsUpToDate();
             if (!ClamAVDefinitionsManager.DefinitionsExist())
             {
-                Logger.LogError("ClamAV definitions are missing. Program cannot proceed.", Array.Empty<object>());
+                Logger.LogError("ClamAV definitions are missing. Program cannot proceed.", new object[0]);
                 Console.WriteLine("ClamAV definitions are missing. Program cannot proceed.");
                 return false;
             }
             if (Directory.Exists(input))
             {
-                Logger.LogInfo($"Scanning directory: {input}", Array.Empty<object>());
+                Logger.LogInfo($"Scanning directory: {input}", new object[0]);
                 ScanDirectorySafe(input);
             }
             else if (File.Exists(input))
@@ -556,9 +675,9 @@ namespace antivirus
             }
             else
             {
-                Logger.LogError($"Path not found: {input}", Array.Empty<object>());
+                Logger.LogError($"Path not found: {input}", new object[0]);
             }
-            Logger.LogInfo("Scanning finished", Array.Empty<object>());
+            Logger.LogInfo("Scanning finished", new object[0]);
             return true;
         }
 
@@ -601,17 +720,17 @@ namespace antivirus
                 string cldPath = Path.Combine(ClamAVDir, def + ".cld");
                 if (!File.Exists(cvdPath) && !File.Exists(cldPath))
                 {
-                    Logger.LogError($"ClamAV definition missing: {cvdPath} or {cldPath}", Array.Empty<object>());
+                    Logger.LogError($"ClamAV definition missing: {cvdPath} or {cldPath}", new object[0]);
                     allExist = false;
                 }
             }
             if (!allExist)
             {
-                Logger.LogError("One or more ClamAV definitions are missing. Please run freshclam or update ClamAV definitions.", Array.Empty<object>());
+                Logger.LogError("One or more ClamAV definitions are missing. Please run freshclam or update ClamAV definitions.", new object[0]);
             }
             else
             {
-                Logger.LogInfo("All required ClamAV definitions are present in the ClamAV directory.", Array.Empty<object>());
+                Logger.LogInfo("All required ClamAV definitions are present in the ClamAV directory.", new object[0]);
             }
             return allExist;
         }
@@ -625,31 +744,31 @@ namespace antivirus
             Directory.CreateDirectory(installersDir);
             bool isLegacy = IsLegacyWindows();
             var browsers = isLegacy
-                ? new (string Name, string Url, string File)[]
+                ? new[]
                 {
-                    ("K-Meleon", "https://downloads.sourceforge.net/project/kmeleon/k-meleon/1.5.4/K-Meleon1.5.4.exe", Path.Combine(installersDir, "K-Meleon1.5.4.exe")),
-                    ("RetroZilla", "https://o.rthost.win/gpc/files1.rt/retrozilla-2.2.exe", Path.Combine(installersDir, "RetroZilla-2.2.exe"))
+                    new { Name = "K-Meleon", Url = "https://downloads.sourceforge.net/project/kmeleon/k-meleon/1.5.4/K-Meleon1.5.4.exe", File = Path.Combine(installersDir, "K-Meleon1.5.4.exe") },
+                    new { Name = "RetroZilla", Url = "https://o.rthost.win/gpc/files1.rt/retrozilla-2.2.exe", File = Path.Combine(installersDir, "RetroZilla-2.2.exe") }
                 }
-                : new (string Name, string Url, string File)[]
+                : new[]
                 {
-                    ("Chrome", ChromeUrl, Path.Combine(installersDir, "ChromeSetup.exe")),
-                    ("Firefox", FirefoxUrl, Path.Combine(installersDir, "FirefoxSetup.exe")),
-                    ("Opera", OperaSetupUrl, Path.Combine(installersDir, "OperaSetup.exe")),
-                    ("K-Meleon", KmeleonSetupUrl, Path.Combine(installersDir, "K-MeleonSetup.exe")),
+                    new { Name = "Chrome", Url = ChromeUrl, File = Path.Combine(installersDir, "ChromeSetup.exe") },
+                    new { Name = "Firefox", Url = FirefoxUrl, File = Path.Combine(installersDir, "FirefoxSetup.exe") },
+                    new { Name = "Opera", Url = OperaSetupUrl, File = Path.Combine(installersDir, "OperaSetup.exe") },
+                    new { Name = "K-Meleon", Url = KmeleonSetupUrl, File = Path.Combine(installersDir, "K-MeleonSetup.exe") },
                 };
-            foreach (var (name, url, file) in browsers)
+            foreach (var browser in browsers)
             {
-                if (!File.Exists(file))
+                if (!File.Exists(browser.File))
                 {
                     try
                     {
-                        Logger.LogInfo($"Downloading {name} installer...", Array.Empty<object>());
-                        DownloadFileAsync(url, file).GetAwaiter().GetResult();
-                        Logger.LogInfo($"{name} installer downloaded to {file}.", Array.Empty<object>());
+                        Logger.LogInfo($"Downloading {browser.Name} installer...", new object[0]);
+                        DownloadFile(browser.Url, browser.File);
+                        Logger.LogInfo($"{browser.Name} installer downloaded to {browser.File}.", new object[0]);
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogWarning($"Failed to download {name} installer: {ex.Message}", Array.Empty<object>());
+                        Logger.LogWarning($"Failed to download {browser.Name} installer: {ex.Message}", new object[0]);
                     }
                 }
             }

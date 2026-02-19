@@ -10,21 +10,21 @@ namespace antivirus
         static void Main(string[] args)
         {
             Console.WriteLine("Program execution started.");
-            Logger.LogInfo("Program started", Array.Empty<object>());
+            Logger.LogInfo("Program started", new object[0]);
 
             // Check if the program is launched with the --browser-repair argument
             if (args.Length > 0 && args[0] == "--browser-repair")
             {
-                Logger.LogInfo("Executing browser repair process.", Array.Empty<object>());
+                Logger.LogInfo("Executing browser repair process.", new object[0]);
                 BrowserRepair.RepairBrowsers();
-                Logger.LogInfo("Browser repair process completed.", Array.Empty<object>());
+                Logger.LogInfo("Browser repair process completed.", new object[0]);
                 return;
             }
 
             // Dual OS compatibility: use legacy code if on Windows Me or similar
             if (IsLegacyWindows())
             {
-                Logger.LogInfo("Running in legacy compatibility mode.", Array.Empty<object>());
+                Logger.LogInfo("Running in legacy compatibility mode.", new object[0]);
                 try
                 {
                     // Launch legacy process if available (antivirus.Legacy.exe)
@@ -38,7 +38,7 @@ namespace antivirus
                             UseShellExecute = true
                         };
                         proc.Start();
-                        Logger.LogInfo("Launched legacy antivirus process.", Array.Empty<object>());
+                        Logger.LogInfo("Launched legacy antivirus process.", new object[0]);
                     }
                     else
                     {
@@ -55,13 +55,13 @@ namespace antivirus
                         }
                         else
                         {
-                            Logger.LogError("No legacy entry point found.", Array.Empty<object>());
+                            Logger.LogError("No legacy entry point found.", new object[0]);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError("Failed to launch legacy process: " + ex.Message, Array.Empty<object>());
+                    Logger.LogError("Failed to launch legacy process: " + ex.Message, new object[0]);
                 }
                 return;
             }
@@ -69,37 +69,37 @@ namespace antivirus
             try
             {
                 // 1. MBR check and cleanse (prompt user)
-                Logger.LogInfo("Checking for MBR infections...", Array.Empty<object>());
+                Logger.LogInfo("Checking for MBR infections...", new object[0]);
                 if (MBRChecker.IsMBRSuspicious())
                 {
-                    Logger.LogWarning("Suspicious MBR detected!", Array.Empty<object>());
+                    Logger.LogWarning("Suspicious MBR detected!", new object[0]);
                     Console.WriteLine("Suspicious MBR detected! Attempt to cleanse? (y/n): ");
                     var resp = Console.ReadLine();
                     if (resp != null && resp.Trim().ToLower().StartsWith("y"))
                     {
                         if (MBRChecker.CleanseMBR())
                         {
-                            Logger.LogInfo("MBR cleansed successfully.", Array.Empty<object>());
+                            Logger.LogInfo("MBR cleansed successfully.", new object[0]);
                             Console.WriteLine("MBR cleansed successfully.");
                         }
                         else
                         {
-                            Logger.LogError("Failed to cleanse MBR.", Array.Empty<object>());
+                            Logger.LogError("Failed to cleanse MBR.", new object[0]);
                             Console.WriteLine("Failed to cleanse MBR.");
                         }
                     }
                 }
                 else
                 {
-                    Logger.LogInfo("No suspicious MBR detected.", Array.Empty<object>());
+                    Logger.LogInfo("No suspicious MBR detected.", new object[0]);
                 }
 
                 // 2. Ensure ClamAV is installed
                 if (!Scanner.EnsureClamAVInstalled())
                 {
-                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", Array.Empty<object>());
+                    Logger.LogError("ClamAV is not fully configured. Program cannot proceed.", new object[0]);
                     Console.WriteLine("ClamAV is not fully configured. Program cannot proceed.");
-                    Logger.LogInfo("Program finished", Array.Empty<object>());
+                    Logger.LogInfo("Program finished", new object[0]);
                     Console.WriteLine("Scan complete. Press Enter to exit...");
                     Console.ReadLine();
                     return;
@@ -108,9 +108,9 @@ namespace antivirus
                 // 3. Verify ClamAV definitions exist (EnsureClamAVInstalled already attempts updates)
                 if (!Scanner.EnsureClamAVDefinitionsExist())
                 {
-                    Logger.LogError("ClamAV definitions are missing. Program cannot proceed.", Array.Empty<object>());
+                    Logger.LogError("ClamAV definitions are missing. Program cannot proceed.", new object[0]);
                     Console.WriteLine("ClamAV definitions are missing. Program cannot proceed.");
-                    Logger.LogInfo("Program finished", Array.Empty<object>());
+                    Logger.LogInfo("Program finished", new object[0]);
                     Console.WriteLine("Scan complete. Press Enter to exit...");
                     Console.ReadLine();
                     return;
@@ -126,9 +126,9 @@ namespace antivirus
                 if (string.IsNullOrEmpty(input))
                 {
                     input = defaultPath;
-                    Logger.LogInfo("Using default path: " + defaultPath, Array.Empty<object>());
+                    Logger.LogInfo("Using default path: " + defaultPath, new object[0]);
                 }
-                Logger.LogInfo("Starting scan for path: " + input, Array.Empty<object>());
+                Logger.LogInfo("Starting scan for path: " + input, new object[0]);
                 Console.WriteLine("Scanning path: " + input);
 
                 // 6. Scan for malware
@@ -146,26 +146,26 @@ namespace antivirus
                             UseShellExecute = true
                         };
                         Process.Start(startInfo);
-                        Logger.LogInfo("Launched browser repair process.", Array.Empty<object>());
+                        Logger.LogInfo("Launched browser repair process.", new object[0]);
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogError("Failed to launch browser repair process: " + ex.Message, Array.Empty<object>());
+                        Logger.LogError("Failed to launch browser repair process: " + ex.Message, new object[0]);
                     }
                 }
                 else
                 {
-                    Logger.LogInfo("Scan did not complete; skipping browser repair.", Array.Empty<object>());
+                    Logger.LogInfo("Scan did not complete; skipping browser repair.", new object[0]);
                     Console.WriteLine("Scan did not complete; skipping browser repair.");
                 }
 
-                Logger.LogInfo("Program finished", Array.Empty<object>());
+                Logger.LogInfo("Program finished", new object[0]);
                 Console.WriteLine("Scan complete. Press Enter to exit...");
                 Console.ReadLine();
             }
             catch (Exception ex)
             {
-                Logger.LogError("An error occurred: " + ex.Message, Array.Empty<object>());
+                Logger.LogError("An error occurred: " + ex.Message, new object[0]);
             }
         }
 
