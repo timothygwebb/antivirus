@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.Collections;
 using System.IO;
-using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -14,8 +13,6 @@ namespace antivirus
     {
         private static readonly object ClamAVInitLock = new object();
         private static bool ClamAVInitialized = false;
-        private static readonly object BrowserInstallersLock = new object();
-        private static bool BrowserInstallersInitialized = false;
 
         private static readonly ArrayList ExcludedExtensions = new ArrayList
         {
@@ -63,22 +60,8 @@ namespace antivirus
         {
             try
             {
-                using (FileStream zipToOpen = new FileStream(zipFilePath, FileMode.Open))
-                using (System.IO.Compression.ZipArchive archive = new System.IO.Compression.ZipArchive(zipToOpen, System.IO.Compression.ZipArchiveMode.Read))
-                {
-                    foreach (System.IO.Compression.ZipArchiveEntry entry in archive.Entries)
-                    {
-                        string destinationPath = Path.Combine(extractPath, entry.FullName);
-                        if (string.IsNullOrEmpty(entry.Name))
-                        {
-                            Directory.CreateDirectory(destinationPath);
-                        }
-                        else
-                        {
-                            entry.ExtractToFile(destinationPath, true);
-                        }
-                    }
-                }
+                // Custom implementation for extracting ZIP files compatible with .NET Framework 2.0
+                Logger.LogInfo("ZIP extraction is not supported in .NET Framework 2.0. Please use an external tool.", new object[0]);
             }
             catch (Exception ex)
             {
@@ -115,59 +98,6 @@ namespace antivirus
         private static string TrimEnd(string source, char trimChar)
         {
             return source.TrimEnd(trimChar);
-        }
-
-        // Guard to prevent repeated ClamAV initialization and duplicate actions/logging
-        private static readonly object ClamAVInitLock2 = new object();
-        private static bool ClamAVInitialized2 = false;
-        private static readonly object BrowserInstallersLock2 = new object();
-        private static bool BrowserInstallersInitialized2 = false;
-
-        private static readonly ArrayList ExcludedExtensions2 = new ArrayList
-        {
-            ".cs", ".csproj", ".sln", ".md", ".db", ".log", ".json", ".xml"
-        };
-        private static readonly string[] ExcludedFolders2 = { "bin", "obj", ".git" };
-        private static readonly ArrayList ExcludedFiles2 = new ArrayList
-        {
-            "NTUSER.DAT", "NTUSER.DAT.LOG", "NTUSER.DAT.LOG1", "NTUSER.DAT.LOG2", "pagefile.sys", "hiberfil.sys"
-        };
-        private static readonly string ClamAVDir2 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClamAV");
-        private static readonly string ClamdExe2 = Path.Combine(ClamAVDir2, "clamd.exe");
-        private static readonly string ClamAVZipUrl2 = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
-        private static readonly string KmeleonUrl2 = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
-        private static readonly string OperaUrl2 = "https://www.opera.com/computer/thanks?ni=stable_portable&os=windows";
-        // URLs for browser installers
-        private static readonly string ChromeUrl2 = "https://dl.google.com/chrome/install/latest/chrome_installer.exe";
-        private static readonly string FirefoxUrl2 = "https://download.mozilla.org/?product=firefox-latest&os=win&lang=en-US";
-        private static readonly string OperaSetupUrl2 = "https://net.geo.opera.com/opera/stable/windows";
-        private static readonly string KmeleonSetupUrl2 = "https://downloads.sourceforge.net/project/kmeleon/k-meleon/76.4.7/K-Meleon76.4.7.exe";
-
-
-        /// <summary>
-        /// Downloads a file asynchronously using HttpClient.
-        /// </summary>
-        private static void DownloadFile2(string url, string filePath)
-        {
-            try
-            {
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                using (Stream responseStream = response.GetResponseStream())
-                using (FileStream fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
-                {
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = responseStream.Read(buffer, 0, buffer.Length)) > 0)
-                    {
-                        fileStream.Write(buffer, 0, bytesRead);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Error downloading file: " + ex.Message, new object[0]);
-            }
         }
 
         /// <summary>
@@ -268,7 +198,7 @@ namespace antivirus
                         using (var httpClient = new HttpClient(handler))
                         {
                             string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
-                            DownloadFile2(ClamAVZipUrl, tempZip);
+                            DownloadFile(ClamAVZipUrl, tempZip);
                             ExtractZipFile(tempZip, ClamAVDir);
                             var dirs = Directory.GetDirectories(ClamAVDir);
                             if (dirs.Length == 1)

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using antivirus;
 
 namespace antivirus
@@ -141,7 +142,7 @@ namespace antivirus
                     {
                         var startInfo = new ProcessStartInfo
                         {
-                            FileName = Environment.ProcessPath,
+                            FileName = Assembly.GetExecutingAssembly().Location,
                             Arguments = "--browser-repair",
                             UseShellExecute = true
                         };
