@@ -32,12 +32,15 @@ namespace antivirus
         private static readonly string FirefoxUrl = "https://download.mozilla.org/?product=firefox-latest&os=win&lang=en-US";
         private static readonly string OperaSetupUrl = "https://net.geo.opera.com/opera/stable/windows";
         private static readonly string KmeleonSetupUrl = "https://downloads.sourceforge.net/project/kmeleon/k-meleon/76.4.7/K-Meleon76.4.7.exe";
+        private static readonly string DotNetInstallerPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dotnetfx.exe");
 
         private static void DownloadFile(string url, string filePath)
         {
             try
             {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 | SecurityProtocolType.Tls;
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3";
                 using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                 using (Stream responseStream = response.GetResponseStream())
                 using (FileStream fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
@@ -50,9 +53,10 @@ namespace antivirus
                     }
                 }
             }
-            catch (Exception ex)
+            catch (WebException ex)
             {
-                Logger.LogError("Error downloading file: " + ex.Message, new object[0]);
+                Logger.LogError($"Error downloading file: {ex.Message}", new object[0]);
+                Console.WriteLine($"Error downloading file: {ex.Message}");
             }
         }
 
@@ -355,6 +359,8 @@ namespace antivirus
 
         /// <summary>
         /// Recursively scans a directory, skipping excluded files and folders.
+        /// /// <summary>
+        /// Recursively scans a directory, skipping excluded files and folders.
         /// </summary>
         /// <param name="path">The directory path to scan.</param>
         private static void ScanDirectorySafe(string path)
@@ -383,6 +389,8 @@ namespace antivirus
         }
 
         /// <summary>
+        /// Determines if a directory should be skipped based on exclusion rules.
+        /// /// <summary>
         /// Determines if a directory should be skipped based on exclusion rules.
         /// </summary>
                 private static bool ShouldSkipDir(string dirPath)
@@ -689,6 +697,12 @@ namespace antivirus
                     }
                 }
             }
+            // Ensure .NET Framework 2.0 installer is included
+            if (!File.Exists(DotNetInstallerPath))
+            {
+                Logger.LogWarning($".NET Framework 2.0 installer not found at '{DotNetInstallerPath}'. Please ensure 'dotnetfx.exe' is included in the tool folder.", new object[0]);
+                Console.WriteLine($".NET Framework 2.0 installer not found at '{DotNetInstallerPath}'. Please ensure 'dotnetfx.exe' is included in the tool folder.");
+            }
         }
 
         private static bool IsLegacyWindows()
@@ -701,6 +715,34 @@ namespace antivirus
         public static string GetClamAVDir()
         {
             return ClamAVDir;
+        }
+
+        public static void ReadMBR()
+        {
+            try
+            {
+                using (FileStream fs = new FileStream("\\\\.\\PhysicalDrive0", FileMode.Open, FileAccess.Read))
+                {
+                    byte[] mbr = new byte[512];
+                    fs.Read(mbr, 0, mbr.Length);
+                    Logger.LogInfo("MBR read successfully.", new object[0]);
+                }
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Logger.LogWarning("Could not read MBR: Access denied. Run the program as Administrator.", new object[0]);
+                Console.WriteLine("Could not read MBR: Access denied. Run the program as Administrator.");
+            }
+            catch (FileNotFoundException ex)
+            {
+                Logger.LogWarning("Could not read MBR: File not found. Ensure the correct path is used.", new object[0]);
+                Console.WriteLine("Could not read MBR: File not found. Ensure the correct path is used.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Could not read MBR: {ex.Message}", new object[0]);
+                Console.WriteLine($"Could not read MBR: {ex.Message}");
+            }
         }
     }
 

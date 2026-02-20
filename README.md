@@ -19,7 +19,7 @@ The Antivirus Recovery Tool is a cross-platform application designed to scan and
    - For CD: Use your favorite CD burning tool to create a bootable disc with Windows PE or a minimal Linux live CD.
 
 2. **Copy Files:**
-   - Copy the entire antivirus tool folder (including ClamAV, browser installers, and all dependencies) to the root of the USB/CD.
+   - Copy the entire antivirus tool folder (including ClamAV, browser installers, .NET Framework 2.0 installer, and all dependencies) to the root of the USB/CD.
 
 3. **Boot the Target System:**
    - Boot the computer from the USB or CD (you may need to change the boot order in BIOS/UEFI).

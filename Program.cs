@@ -69,31 +69,8 @@ namespace antivirus
 
             try
             {
-                // 1. MBR check and cleanse (prompt user)
-                Logger.LogInfo("Checking for MBR infections...", new object[0]);
-                if (MBRChecker.IsMBRSuspicious())
-                {
-                    Logger.LogWarning("Suspicious MBR detected!", new object[0]);
-                    Console.WriteLine("Suspicious MBR detected! Attempt to cleanse? (y/n): ");
-                    var resp = Console.ReadLine();
-                    if (resp != null && resp.Trim().ToLower().StartsWith("y"))
-                    {
-                        if (MBRChecker.CleanseMBR())
-                        {
-                            Logger.LogInfo("MBR cleansed successfully.", new object[0]);
-                            Console.WriteLine("MBR cleansed successfully.");
-                        }
-                        else
-                        {
-                            Logger.LogError("Failed to cleanse MBR.", new object[0]);
-                            Console.WriteLine("Failed to cleanse MBR.");
-                        }
-                    }
-                }
-                else
-                {
-                    Logger.LogInfo("No suspicious MBR detected.", new object[0]);
-                }
+                // 1. Check for MBR infections
+                Scanner.ReadMBR();
 
                 // 2. Ensure ClamAV is installed
                 if (!Scanner.EnsureClamAVInstalled())
