@@ -161,32 +161,6 @@ namespace antivirus
         }
 
         /// <summary>
-        /// Removes non-database files from the ClamAV directory.
-        /// </summary>
-        private static void CleanClamAVDirectory()
-        {
-            var allowedExtensions = new ArrayList { ".cvd", ".cld", ".exe", ".dll", ".conf", ".log" };
-            var allowedFiles = new ArrayList { "clamd.exe", "freshclam.exe", "clamd.conf", "freshclam.conf", "clamd.log" };
-
-            foreach (var file in Directory.GetFiles(ClamAVDir))
-            {
-                string ext = Path.GetExtension(file);
-                string name = Path.GetFileName(file);
-                if (!allowedExtensions.Contains(ext) && !allowedFiles.Contains(name))
-                {
-                    try
-                    {
-                        File.Delete(file);
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogWarning($"Failed to delete file {name}: {ex.Message}", new object[0]);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
         /// Ensures ClamAV is installed, configured, and up to date.
         /// </summary>
         public static bool EnsureClamAVInstalled()
@@ -285,8 +259,7 @@ namespace antivirus
                     }
                 }
 
-                // 3. Clean ClamAV directory and update database before starting clamd.exe
-                CleanClamAVDirectory();
+                // 3. Update database before starting clamd.exe
                 try
                 {
                     if (ClamAVDefinitionsManager.ShouldAttemptUpdate())
@@ -447,6 +420,8 @@ namespace antivirus
         }
 
         /// <summary>
+        /// Scans a file using ClamAV and heuristics, and quarantines if a threat is found.
+        /// /// <summary>
         /// Scans a file using ClamAV and heuristics, and quarantines if a threat is found.
         /// </summary>
         private static void ScanFile(string filePath)
