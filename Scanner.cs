@@ -26,37 +26,56 @@ namespace antivirus
         internal static readonly string ClamAVDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClamAV");
         private static readonly string ClamdExe = Path.Combine(ClamAVDir, "clamd.exe");
         private static readonly string ClamAVZipUrl = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
-        private static readonly string KmeleonUrl = "http://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
-        private static readonly string OperaUrl = "https://www.opera.com/computer/thanks?ni=stable_portable&os=windows";
+        private static readonly string KmeleonUrl = "https://sourceforge.net/projects/kmeleon/files/k-meleon-dev/K-Meleon76RC2.7z/download";
+        private static readonly string OperaUrl = "https://ftp.opera.com/pub/opera/desktop/96.0.4693.80/win/Opera_96.0.4693.80_Setup.exe";
         private static readonly string ChromeUrl = "https://dl.google.com/chrome/install/latest/chrome_installer.exe";
-        private static readonly string FirefoxUrl = "https://download.mozilla.org/?product=firefox-latest&os=win&lang=en-US";
+        private static readonly string FirefoxUrl = "https://ftp.mozilla.org/pub/firefox/releases/52.9.0esr/win32/en-US/Firefox%20Setup%2052.9.0esr.exe";
         private static readonly string OperaSetupUrl = "https://net.geo.opera.com/opera/stable/windows";
         private static readonly string KmeleonSetupUrl = "https://downloads.sourceforge.net/project/kmeleon/k-meleon/76.4.7/K-Meleon76.4.7.exe";
         private static readonly string DotNetInstallerPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "dotnetfx.exe");
 
         private static void DownloadFile(string url, string filePath)
         {
-            try
+            const int maxRetries = 3;
+            int attempt = 0;
+
+            while (attempt < maxRetries)
             {
-                ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 | SecurityProtocolType.Tls;
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3";
-                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                using (Stream responseStream = response.GetResponseStream())
-                using (FileStream fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+                try
                 {
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = responseStream.Read(buffer, 0, buffer.Length)) > 0)
+                    ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 | SecurityProtocolType.Tls;
+                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                    request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3";
+
+                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                    using (Stream responseStream = response.GetResponseStream())
+                    using (FileStream fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
                     {
-                        fileStream.Write(buffer, 0, bytesRead);
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = responseStream.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            fileStream.Write(buffer, 0, bytesRead);
+                        }
+                    }
+
+                    Logger.LogInfo($"File downloaded successfully from {url} to {filePath}.", new object[0]);
+                    return;
+                }
+                catch (WebException ex)
+                {
+                    attempt++;
+                    Logger.LogWarning($"Attempt {attempt} to download file from {url} failed: {ex.Message}", new object[0]);
+                    if (attempt >= maxRetries)
+                    {
+                        Logger.LogError($"Error downloading file after {maxRetries} attempts: {ex.Message}", new object[0]);
+                        Console.WriteLine($"Error downloading file after {maxRetries} attempts: {ex.Message}");
+                    }
+                    else
+                    {
+                        System.Threading.Thread.Sleep(2000); // Wait before retrying
                     }
                 }
-            }
-            catch (WebException ex)
-            {
-                Logger.LogError($"Error downloading file: {ex.Message}", new object[0]);
-                Console.WriteLine($"Error downloading file: {ex.Message}");
             }
         }
 
@@ -90,10 +109,9 @@ namespace antivirus
         }
 
         // Fixing string method errors
-        private static bool IsExcludedFile(string fileName, object excluded)
+        private static bool IsExcludedFile(string fileName, object _excluded)
         {
-            string excludedString = excluded as string;
-            if (excludedString == null)
+            if (_excluded is not string excludedString)
                 return false;
 
             return string.Equals(fileName, excludedString, StringComparison.OrdinalIgnoreCase) ||
@@ -717,26 +735,49 @@ namespace antivirus
             return ClamAVDir;
         }
 
+        // Updated to use SafeFileHandle for FileStream
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateFile(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
         public static void ReadMBR()
         {
+            const uint GENERIC_READ = 0x80000000;
+            const uint FILE_SHARE_READ = 0x00000001;
+            const uint OPEN_EXISTING = 0x00000003;
+
+            IntPtr handle = CreateFile(
+                "\\\\.\\PhysicalDrive0",
+                GENERIC_READ,
+                FILE_SHARE_READ,
+                IntPtr.Zero,
+                OPEN_EXISTING,
+                0,
+                IntPtr.Zero);
+
+            if (handle.ToInt64() == -1)
+            {
+                int errorCode = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                Logger.LogWarning($"Could not read MBR: Error code {errorCode}", new object[0]);
+                Console.WriteLine($"Could not read MBR: Error code {errorCode}");
+                return;
+            }
+
             try
             {
-                using (FileStream fs = new FileStream("\\\\.\\PhysicalDrive0", FileMode.Open, FileAccess.Read))
+                byte[] mbr = new byte[512];
+                using (var safeHandle = new Microsoft.Win32.SafeHandles.SafeFileHandle(handle, true))
+                using (FileStream fs = new FileStream(safeHandle, FileAccess.Read))
                 {
-                    byte[] mbr = new byte[512];
                     fs.Read(mbr, 0, mbr.Length);
                     Logger.LogInfo("MBR read successfully.", new object[0]);
                 }
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                Logger.LogWarning("Could not read MBR: Access denied. Run the program as Administrator.", new object[0]);
-                Console.WriteLine("Could not read MBR: Access denied. Run the program as Administrator.");
-            }
-            catch (FileNotFoundException ex)
-            {
-                Logger.LogWarning("Could not read MBR: File not found. Ensure the correct path is used.", new object[0]);
-                Console.WriteLine("Could not read MBR: File not found. Ensure the correct path is used.");
             }
             catch (Exception ex)
             {
