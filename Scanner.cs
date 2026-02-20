@@ -177,7 +177,6 @@ namespace antivirus
                     try
                     {
                         File.Delete(file);
-                        Logger.LogInfo($"Deleted non-database file from ClamAV directory: {name}", new object[0]);
                     }
                     catch (Exception ex)
                     {
