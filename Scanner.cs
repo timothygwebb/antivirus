@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using ICSharpCode.SharpZipLib.Zip;
 
 namespace antivirus
 {
@@ -36,17 +37,15 @@ namespace antivirus
 
         private static void DownloadFile(string url, string filePath)
         {
+            // .NET 2.0 does not support modern TLS. Prompt user to manually download if HTTPS fails.
             const int maxRetries = 3;
             int attempt = 0;
-
             while (attempt < maxRetries)
             {
                 try
                 {
-                    ServicePointManager.SecurityProtocol = SecurityProtocolType.Ssl3 | SecurityProtocolType.Tls;
                     HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                    request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3";
-
+                    request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
                     using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                     using (Stream responseStream = response.GetResponseStream())
                     using (FileStream fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
@@ -58,11 +57,10 @@ namespace antivirus
                             fileStream.Write(buffer, 0, bytesRead);
                         }
                     }
-
                     Logger.LogInfo($"File downloaded successfully from {url} to {filePath}.", new object[0]);
                     return;
                 }
-                catch (WebException ex)
+                catch (Exception ex)
                 {
                     attempt++;
                     Logger.LogWarning($"Attempt {attempt} to download file from {url} failed: {ex.Message}", new object[0]);
@@ -70,6 +68,7 @@ namespace antivirus
                     {
                         Logger.LogError($"Error downloading file after {maxRetries} attempts: {ex.Message}", new object[0]);
                         Console.WriteLine($"Error downloading file after {maxRetries} attempts: {ex.Message}");
+                        Console.WriteLine("If this is an HTTPS URL, please download the file manually on a modern machine and place it at: " + filePath);
                     }
                     else
                     {
@@ -83,8 +82,35 @@ namespace antivirus
         {
             try
             {
-                // Custom implementation for extracting ZIP files compatible with .NET Framework 2.0
-                Logger.LogInfo("ZIP extraction is not supported in .NET Framework 2.0. Please use an external tool.", new object[0]);
+                // Requires: using ICSharpCode.SharpZipLib.Zip;
+                using (FileStream fs = File.OpenRead(zipFilePath))
+                using (ZipInputStream zipStream = new ZipInputStream(fs))
+                {
+                    ZipEntry entry;
+                    while ((entry = zipStream.GetNextEntry()) != null)
+                    {
+                        string entryFileName = entry.Name;
+                        string fullPath = Path.Combine(extractPath, entryFileName);
+
+                        string directoryName = Path.GetDirectoryName(fullPath);
+                        if (!Directory.Exists(directoryName))
+                            Directory.CreateDirectory(directoryName);
+
+                        if (!entry.IsDirectory)
+                        {
+                            using (FileStream streamWriter = File.Create(fullPath))
+                            {
+                                byte[] buffer = new byte[4096];
+                                int size;
+                                while ((size = zipStream.Read(buffer, 0, buffer.Length)) > 0)
+                                {
+                                    streamWriter.Write(buffer, 0, size);
+                                }
+                            }
+                        }
+                    }
+                }
+                Logger.LogInfo("ZIP extraction completed using SharpZipLib.", new object[0]);
             }
             catch (Exception ex)
             {
@@ -109,13 +135,14 @@ namespace antivirus
         }
 
         // Fixing string method errors
-        private static bool IsExcludedFile(string fileName, object _excluded)
+        private static bool IsExcludedFile(string fileName, object _1)
         {
-            if (_excluded is not string excludedString)
-                return false;
-
-            return string.Equals(fileName, excludedString, StringComparison.OrdinalIgnoreCase) ||
-                   (excludedString.EndsWith("*") && fileName.StartsWith(excludedString.TrimEnd('*'), StringComparison.OrdinalIgnoreCase));
+            if (_1 is string excludedString)
+            {
+                return string.Equals(fileName, excludedString, StringComparison.OrdinalIgnoreCase) ||
+                       (excludedString.EndsWith("*") && fileName.StartsWith(excludedString.TrimEnd('*'), StringComparison.OrdinalIgnoreCase));
+            }
+            return false;
         }
 
         // Fixing Contains method for .NET Framework 2.0
@@ -136,7 +163,7 @@ namespace antivirus
 
         /// <summary>
         /// Updates the ClamAV virus database using freshclam.
-        /// </summary>
+        /// /// </summary>
         private static void UpdateClamAVDatabase()
         {
             string freshclamExe = Path.Combine(ClamAVDir, "freshclam.exe");
@@ -184,7 +211,7 @@ namespace antivirus
 
         /// <summary>
         /// Ensures ClamAV is installed, configured, and up to date.
-        /// </summary>
+        /// /// </summary>
         public static bool EnsureClamAVInstalled()
         {
             // If daemon already responding or we've initialized, nothing to do
