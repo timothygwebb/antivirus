@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic;
+using System.Collections;
 using System.IO;
 
 namespace antivirus
@@ -7,7 +7,7 @@ namespace antivirus
     public class Definitions
     {
         private static readonly string DbPath = Path.Combine(Directory.GetCurrentDirectory(), "definitions.db");
-        private static HashSet<string> signatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static ArrayList signatures = new ArrayList();
         private static bool loaded = false;
 
         public static void LoadDefinitions()
@@ -18,14 +18,14 @@ namespace antivirus
                 foreach (var line in File.ReadAllLines(DbPath))
                 {
                     var trimmed = line.Trim();
-                    if (!string.IsNullOrEmpty(trimmed) && !trimmed.StartsWith("#"))
+                    if (!string.IsNullOrEmpty(trimmed) && !trimmed.StartsWith("#") && !signatures.Contains(trimmed))
                         signatures.Add(trimmed);
                 }
-                Logger.LogInfo($"Loaded {signatures.Count} virus definitions from {DbPath}", Array.Empty<object>());
+                Logger.LogInfo("Loaded " + signatures.Count + " virus definitions from " + DbPath, new object[0]);
             }
             else
             {
-                Logger.LogWarning($"Definitions database not found: {DbPath}", Array.Empty<object>());
+                Logger.LogWarning("Definitions database not found: " + DbPath, new object[0]);
             }
             loaded = true;
         }
