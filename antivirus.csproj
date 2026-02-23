@@ -13,6 +13,11 @@
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="AntivirusTests\**" />
+    <EmbeddedResource Remove="AntivirusTests\**" />
+    <None Remove="AntivirusTests\**" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="antivirus.Legacy\antivirus.Legacy.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -29,7 +34,7 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="SharpZipLib" Version="0.86" />
+    <PackageReference Include="DotNetZip.Reduced" Version="1.9.1.8" />
   </ItemGroup>
   <!-- Removed unnecessary test package references and restored clean SDK-style configuration -->
 </Project>
