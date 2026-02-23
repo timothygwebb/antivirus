@@ -6,7 +6,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using ICSharpCode.SharpZipLib.Zip;
+using Antivirus; // Added to include the namespace for the ZipExtractor class
+using Ionic.Zip; // Replacing SharpZipLib with DotNetZip
 
 namespace antivirus
 {
@@ -37,28 +38,43 @@ namespace antivirus
 
         private static void DownloadFile(string url, string filePath)
         {
-            // .NET 2.0 does not support modern TLS. Prompt user to manually download if HTTPS fails.
             const int maxRetries = 3;
             int attempt = 0;
+
             while (attempt < maxRetries)
             {
                 try
                 {
-                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                    request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
-                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                    using (Stream responseStream = response.GetResponseStream())
-                    using (FileStream fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+                    // Use curl to download the file
+                    var startInfo = new ProcessStartInfo
                     {
-                        byte[] buffer = new byte[8192];
-                        int bytesRead;
-                        while ((bytesRead = responseStream.Read(buffer, 0, buffer.Length)) > 0)
+                        FileName = "cmd.exe",
+                        Arguments = $"/C curl -L \"{url}\" -o \"{filePath}\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using (var process = Process.Start(startInfo))
+                    {
+                        if (process != null)
                         {
-                            fileStream.Write(buffer, 0, bytesRead);
+                            string output = process.StandardOutput.ReadToEnd();
+                            string error = process.StandardError.ReadToEnd();
+                            process.WaitForExit();
+
+                            if (process.ExitCode == 0)
+                            {
+                                Logger.LogInfo($"File downloaded successfully from {url} to {filePath}.", new object[0]);
+                                return;
+                            }
+                            else
+                            {
+                                throw new Exception($"curl error: {error}");
+                            }
                         }
                     }
-                    Logger.LogInfo($"File downloaded successfully from {url} to {filePath}.", new object[0]);
-                    return;
                 }
                 catch (Exception ex)
                 {
@@ -78,45 +94,7 @@ namespace antivirus
             }
         }
 
-        private static void ExtractZipFile(string zipFilePath, string extractPath)
-        {
-            try
-            {
-                // Requires: using ICSharpCode.SharpZipLib.Zip;
-                using (FileStream fs = File.OpenRead(zipFilePath))
-                using (ZipInputStream zipStream = new ZipInputStream(fs))
-                {
-                    ZipEntry entry;
-                    while ((entry = zipStream.GetNextEntry()) != null)
-                    {
-                        string entryFileName = entry.Name;
-                        string fullPath = Path.Combine(extractPath, entryFileName);
-
-                        string directoryName = Path.GetDirectoryName(fullPath);
-                        if (!Directory.Exists(directoryName))
-                            Directory.CreateDirectory(directoryName);
-
-                        if (!entry.IsDirectory)
-                        {
-                            using (FileStream streamWriter = File.Create(fullPath))
-                            {
-                                byte[] buffer = new byte[4096];
-                                int size;
-                                while ((size = zipStream.Read(buffer, 0, buffer.Length)) > 0)
-                                {
-                                    streamWriter.Write(buffer, 0, size);
-                                }
-                            }
-                        }
-                    }
-                }
-                Logger.LogInfo("ZIP extraction completed using SharpZipLib.", new object[0]);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Error extracting zip file: " + ex.Message, new object[0]);
-            }
-        }
+       
 
         private static string GetRelativePath(string basePath, string fullPath)
         {
@@ -188,12 +166,14 @@ namespace antivirus
                             string error = process.StandardError.ReadToEnd();
                             process.WaitForExit();
                             Logger.LogInfo($"freshclam output: {output}", new object[0]);
-                            if (!string.IsNullOrEmpty(error))
-                                Logger.LogWarning($"freshclam error: {error}", new object[0]);
                             // If freshclam succeeded, notify the definitions manager
                             if (process.ExitCode == 0)
                             {
                                 try { ClamAVDefinitionsManager.NotifyUpdated(); } catch { }
+                            }
+                            else
+                            {
+                                Logger.LogWarning($"freshclam error: {error}", new object[0]);
                             }
                         }
                     }
@@ -232,7 +212,7 @@ namespace antivirus
                     {
                         string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
                         DownloadFile(ClamAVZipUrl, tempZip);
-                        ExtractZipFile(tempZip, ClamAVDir);
+                        ZipExtractor.ExtractZip(tempZip, ClamAVDir);
                         var dirs = Directory.GetDirectories(ClamAVDir);
                         if (dirs.Length == 1)
                         {

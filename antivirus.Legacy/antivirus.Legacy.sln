@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11512.155 d18.3
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "antivirus.Legacy", "antivirus.Legacy.csproj", "{223F3FE6-59B3-1413-8A3A-13A00D2B9950}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "antivirus", "..\antivirus.csproj", "{CB0853B6-09FC-E990-1996-AC62B46C4D11}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{223F3FE6-59B3-1413-8A3A-13A00D2B9950}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{223F3FE6-59B3-1413-8A3A-13A00D2B9950}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{223F3FE6-59B3-1413-8A3A-13A00D2B9950}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{223F3FE6-59B3-1413-8A3A-13A00D2B9950}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CB0853B6-09FC-E990-1996-AC62B46C4D11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CB0853B6-09FC-E990-1996-AC62B46C4D11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CB0853B6-09FC-E990-1996-AC62B46C4D11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CB0853B6-09FC-E990-1996-AC62B46C4D11}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {579E6418-5F6B-4FD9-AB50-2B6ADD379E95}
+	EndGlobalSection
+EndGlobal
