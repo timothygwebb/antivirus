@@ -1,7 +1,7 @@
-# Antivirus Recovery Tool
+# Antivirus Solution
 
 ## Overview
-The Antivirus Recovery Tool is a cross-platform application designed to scan and remove malware, repair browser access, and manage ClamAV virus definitions. The tool is compatible with both modern operating systems (e.g., Windows 10/11) and older systems (e.g., Windows Me) through a dual OS compatibility mode.
+The Antivirus Solution is a cross-platform application designed to scan and remove malware, repair browser access, and manage ClamAV virus definitions. The tool is compatible with both modern operating systems (e.g., Windows 10/11) and older systems (e.g., Windows Me) through a dual OS compatibility mode.
 
 ## Features
 - **Dual OS Compatibility**: Automatically detects the operating system and runs in compatibility mode for older systems.
@@ -9,6 +9,11 @@ The Antivirus Recovery Tool is a cross-platform application designed to scan and
 - **Browser Repair**: Repairs browser access by downloading and installing legacy browsers if needed. This process is now decoupled and runs as a separate process after a successful scan.
 - **ClamAV Integration**: Ensures virus definitions are up-to-date and performs scans using ClamAV.
 - **Logging**: Logs all actions to `antivirus.log` in the current directory.
+- **Modern TLS Support**: Uses `curl` for downloading files to ensure compatibility with modern TLS protocols.
+
+## Requirements
+- .NET Framework 2.0
+- `curl` command-line tool installed and available in the system's PATH.
 
 ## Usage
 
@@ -41,27 +46,19 @@ The Antivirus Recovery Tool is a cross-platform application designed to scan and
 
 ### Project Structure
 - **Program.cs**: Entry point of the application. Implements dual OS compatibility logic and launches browser repair as a separate process after a successful scan.
-- **Scanner.cs**: Handles malware scanning and ClamAV integration. Ensures ClamAV daemon readiness and virus definitions.
+- **Scanner.cs**: Handles malware scanning and ClamAV integration. Ensures ClamAV daemon readiness and virus definitions. Now uses `curl` for all downloads.
 - **MBRChecker.cs**: Checks and cleanses the Master Boot Record (MBR).
 - **DefaultLogger.cs**: Provides logging functionality.
 - **ClamAVDefinitionsManager.cs**: Manages ClamAV virus definitions.
 - **Definitions.cs**: Handles virus definitions database.
 - **BrowserRepair.cs**: Repairs browser access and installs legacy browsers. Now executed as a separate process.
 - **Quarantine.cs**: Manages quarantining of infected files.
-- **ILogger.cs**: Interface for logging.
-- **Logger.cs**: Implements logging functionality.
 
-### Compatibility Mode
-- The application uses `_Backup` files for compatibility with older operating systems (e.g., Windows Me).
-- The `Program.cs` file dynamically determines the OS version and loads the appropriate files.
+## Contributing
+1. Fork the repository.
+2. Create a new branch for your feature or bug fix.
+3. Commit your changes with clear and concise messages.
+4. Submit a pull request for review.
 
-### Building the Project
-- The project targets `.NET 8` for modern systems.
-- For compatibility with older systems, the `_Backup` files are designed to work with `.NET Framework 1.1`.
-
----
-
-## Notes
-- This tool is portable and does not require installation.
-- For best results, always use the latest version of the tool and virus definitions.
-- Use at your own risk. Always back up important data before making system changes.
+## License
+This project is licensed under the MIT License. See the LICENSE file for details.
