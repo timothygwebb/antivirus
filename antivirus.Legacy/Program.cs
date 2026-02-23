@@ -50,7 +50,7 @@ namespace antivirus.Legacy
             QuarantineInfectedFiles(scanDir, quarantineDir);
         }
 
-        private static void DownloadWithCurl(string url, string destinationPath)
+        public static void DownloadWithCurl(string url, string destinationPath)
         {
             try
             {
@@ -135,7 +135,7 @@ namespace antivirus.Legacy
             }
         }
 
-        private static void InstallClamAV(string installerPath)
+        public static void InstallClamAV(string installerPath)
         {
             try
             {
@@ -172,7 +172,7 @@ namespace antivirus.Legacy
             }
         }
 
-        private static void ConfigureClamAV()
+        public static void ConfigureClamAV()
         {
             try
             {
@@ -187,7 +187,7 @@ namespace antivirus.Legacy
             }
         }
 
-        private static void ScanFiles(string directory)
+        public static void ScanFiles(string directory)
         {
             try
             {
@@ -242,7 +242,7 @@ namespace antivirus.Legacy
             }
         }
 
-        private static void QuarantineInfectedFiles(string sourceDir, string quarantineDir)
+        public static void QuarantineInfectedFiles(string sourceDir, string quarantineDir)
         {
             try
             {

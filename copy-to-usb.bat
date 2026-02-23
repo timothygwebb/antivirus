@@ -11,18 +11,25 @@ set USB_TARGET=%1
 REM Create target directory if it doesn't exist
 if not exist "%USB_TARGET%" mkdir "%USB_TARGET%"
 
+REM Copy main antivirus executable and DLLs
+copy /Y bin\Release\net472\antivirus.exe "%USB_TARGET%" >nul
+copy /Y bin\Release\net472\*.dll "%USB_TARGET%" >nul
+
 REM Copy legacy executable and DLLs
 copy /Y antivirus.Legacy\bin\Release\antivirus.Legacy.exe "%USB_TARGET%" >nul
 copy /Y antivirus.Legacy\bin\Release\*.dll "%USB_TARGET%" >nul
 
 REM Copy BrowserInstallers folder (if exists)
-if exist BrowserInstallers xcopy /E /I /Y BrowserInstallers "%USB_TARGET%\BrowserInstallers"
+if exist bin\Release\net472\BrowserInstallers xcopy /E /I /Y bin\Release\net472\BrowserInstallers "%USB_TARGET%\BrowserInstallers"
 
 REM Copy ClamAV folder (if exists)
 if exist ClamAV xcopy /E /I /Y ClamAV "%USB_TARGET%\ClamAV"
 
 REM Copy definitions and other important files (if needed)
 if exist definitions.db copy /Y definitions.db "%USB_TARGET%" >nul
+
+REM Copy .NET Framework 2.0 installer
+if exist dotnetfx.exe copy /Y dotnetfx.exe "%USB_TARGET%" >nul
 
 REM Done
 echo Files copied to %USB_TARGET%

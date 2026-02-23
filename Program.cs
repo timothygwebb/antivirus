@@ -152,5 +152,35 @@ namespace antivirus
             var os = Environment.OSVersion;
             return os.Platform == PlatformID.Win32Windows && (os.Version.Major < 5); // Windows Me/98/95
         }
+
+        public static void DownloadWithCurl(string url, string destinationPath)
+        {
+            // TODO: Implement the method to download a file using curl.
+            throw new NotImplementedException();
+        }
+
+        public static void InstallClamAV(string installerPath)
+        {
+            // TODO: Implement the method to install ClamAV.
+            throw new NotImplementedException();
+        }
+
+        public static void ConfigureClamAV()
+        {
+            // TODO: Implement the method to configure ClamAV.
+            throw new NotImplementedException();
+        }
+
+        public static void ScanFiles(string directoryPath)
+        {
+            // TODO: Implement the method to scan files in a directory.
+            throw new NotImplementedException();
+        }
+
+        public static void QuarantineInfectedFiles(string sourceDirectory, string quarantineDirectory)
+        {
+            // TODO: Implement the method to quarantine infected files.
+            throw new NotImplementedException();
+        }
     }
 }
