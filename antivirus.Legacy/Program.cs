@@ -23,9 +23,10 @@ namespace antivirus.Legacy
                 string clamavDownloadUrl = "https://clamav-site.s3.amazonaws.com/production/release_files/files/000/002/065/original/clamav-1.0.9.win.win32.msi?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAU7AK5ITMMOVIJYX4%2F20260223%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260223T005519Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=3d59ea5619c1d8fb3120c16f6d6dbb17b2a62e982fb06cdeaaf508463856cda2"; // Updated URL
                 DownloadWithCurl(clamavDownloadUrl, clamavInstallerPath);
 
+                bool installSuccess = false;
                 if (File.Exists(clamavInstallerPath))
                 {
-                    InstallClamAV(clamavInstallerPath);
+                    installSuccess = InstallClamAV(clamavInstallerPath);
                 }
                 else
                 {
@@ -41,7 +42,8 @@ namespace antivirus.Legacy
                 {
                     Directory.CreateDirectory(scanDir);
                 }
-                ScanFiles(scanDir);
+                string clamdscanPath = FindClamdscanExecutable();
+                ScanFiles(scanDir, clamdscanPath);
 
                 // Step 4: Quarantine infected files
                 string quarantineDir = Path.Combine(Directory.GetCurrentDirectory(), "Quarantine");
@@ -147,7 +149,8 @@ namespace antivirus.Legacy
             }
         }
 
-        private static void InstallClamAV(string installerPath)
+        // Removed duplicate void InstallClamAV
+        private static bool InstallClamAV(string installerPath)
         {
             try
             {
@@ -166,10 +169,19 @@ namespace antivirus.Legacy
                     if (process.ExitCode == 0)
                     {
                         Console.WriteLine("ClamAV installed successfully.");
+                        // Check for clamdscan.exe existence
+                        string clamdscanPath = FindClamdscanExecutable();
+                        if (string.IsNullOrEmpty(clamdscanPath))
+                        {
+                            Console.WriteLine("ClamAV installation succeeded, but clamdscan.exe was not found. Please check installation location or PATH.");
+                            return false;
+                        }
+                        return true;
                     }
                     else
                     {
                         Console.WriteLine("ClamAV installation failed.");
+                        return false;
                     }
                 }
             }
@@ -177,13 +189,35 @@ namespace antivirus.Legacy
             {
                 Console.WriteLine(win32Ex.ToString());
                 Console.WriteLine("Ensure the installer path is correct and you have the necessary permissions.");
+                return false;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to install ClamAV: {ex.Message}");
+                return false;
             }
+            return false;
         }
 
+        private static string FindClamdscanExecutable()
+        {
+            // Try PATH
+            if (IsExecutableAvailable("clamdscan"))
+                return "clamdscan";
+
+            // Try common install locations
+            string[] commonPaths = new string[] {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClamAV\\clamdscan.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "clamdscan.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers\\clamdscan.exe")
+            };
+            foreach (string path in commonPaths)
+            {
+                if (File.Exists(path))
+                    return path;
+            }
+            return null;
+        }
         private static void ConfigureClamAV()
         {
             try
@@ -199,18 +233,18 @@ namespace antivirus.Legacy
             }
         }
 
-        private static void ScanFiles(string directory)
+        // Removed duplicate void ScanFiles
+        private static void ScanFiles(string directory, string clamdscanPath)
         {
             try
             {
-                if (!IsExecutableAvailable("clamdscan"))
+                if (string.IsNullOrEmpty(clamdscanPath) || (!clamdscanPath.Equals("clamdscan") && !File.Exists(clamdscanPath)))
                 {
-                    Console.WriteLine("clamdscan is not available on this system. Please ensure ClamAV is installed and the executable is in the system's PATH.");
+                    Console.WriteLine("clamdscan.exe is not available on this system. Please ensure ClamAV is installed and the executable is in the system's PATH or specify its location.");
                     return;
                 }
 
-                Console.WriteLine("Scanning files...");
-                string clamdscanPath = "clamdscan";
+                Console.WriteLine($"Scanning files with: {clamdscanPath}");
                 string arguments = $"--infected --remove {directory}";
 
                 ProcessStartInfo processInfo = new ProcessStartInfo
