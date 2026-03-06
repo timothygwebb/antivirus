@@ -8,46 +8,58 @@ namespace antivirus.Legacy
     {
         public static void Main(string[] _)
         {
-            Console.WriteLine("Legacy Antivirus Recovery Tool");
-
-            string installersDir = Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers");
-            if (!Directory.Exists(installersDir))
+            try
             {
-                Directory.CreateDirectory(installersDir);
+                Console.WriteLine("Legacy Antivirus Recovery Tool");
+
+                string installersDir = Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers");
+                if (!Directory.Exists(installersDir))
+                {
+                    Directory.CreateDirectory(installersDir);
+                }
+
+                // Step 1: Download and install ClamAV
+                string clamavInstallerPath = Path.Combine(installersDir, "clamav-1.0.9.win.win32.msi");
+                string clamavDownloadUrl = "https://clamav-site.s3.amazonaws.com/production/release_files/files/000/002/065/original/clamav-1.0.9.win.win32.msi?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAU7AK5ITMMOVIJYX4%2F20260223%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260223T005519Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=3d59ea5619c1d8fb3120c16f6d6dbb17b2a62e982fb06cdeaaf508463856cda2"; // Updated URL
+                DownloadWithCurl(clamavDownloadUrl, clamavInstallerPath);
+
+                if (File.Exists(clamavInstallerPath))
+                {
+                    InstallClamAV(clamavInstallerPath);
+                }
+                else
+                {
+                    Console.WriteLine("ClamAV installer not found. Skipping installation.");
+                }
+
+                // Step 2: Configure ClamAV
+                ConfigureClamAV();
+
+                // Step 3: Scan files
+                string scanDir = Path.Combine(Directory.GetCurrentDirectory(), "ScanDirectory");
+                if (!Directory.Exists(scanDir))
+                {
+                    Directory.CreateDirectory(scanDir);
+                }
+                ScanFiles(scanDir);
+
+                // Step 4: Quarantine infected files
+                string quarantineDir = Path.Combine(Directory.GetCurrentDirectory(), "Quarantine");
+                if (!Directory.Exists(quarantineDir))
+                {
+                    Directory.CreateDirectory(quarantineDir);
+                }
+                QuarantineInfectedFiles(scanDir, quarantineDir);
             }
-
-            // Step 1: Download and install ClamAV
-            string clamavInstallerPath = Path.Combine(installersDir, "clamav-1.0.9.win.win32.msi");
-            string clamavDownloadUrl = "https://clamav-site.s3.amazonaws.com/production/release_files/files/000/002/065/original/clamav-1.0.9.win.win32.msi?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAU7AK5ITMMOVIJYX4%2F20260223%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260223T005519Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=3d59ea5619c1d8fb3120c16f6d6dbb17b2a62e982fb06cdeaaf508463856cda2"; // Updated URL
-            DownloadWithCurl(clamavDownloadUrl, clamavInstallerPath);
-
-            if (File.Exists(clamavInstallerPath))
+            catch (Exception ex)
             {
-                InstallClamAV(clamavInstallerPath);
+                Console.WriteLine(ex.ToString());
             }
-            else
+            finally
             {
-                Console.WriteLine("ClamAV installer not found. Skipping installation.");
+                Console.WriteLine("Press Enter to exit...");
+                Console.ReadLine();
             }
-
-            // Step 2: Configure ClamAV
-            ConfigureClamAV();
-
-            // Step 3: Scan files
-            string scanDir = Path.Combine(Directory.GetCurrentDirectory(), "ScanDirectory");
-            if (!Directory.Exists(scanDir))
-            {
-                Directory.CreateDirectory(scanDir);
-            }
-            ScanFiles(scanDir);
-
-            // Step 4: Quarantine infected files
-            string quarantineDir = Path.Combine(Directory.GetCurrentDirectory(), "Quarantine");
-            if (!Directory.Exists(quarantineDir))
-            {
-                Directory.CreateDirectory(quarantineDir);
-            }
-            QuarantineInfectedFiles(scanDir, quarantineDir);
         }
 
         private static void DownloadWithCurl(string url, string destinationPath)
@@ -98,7 +110,7 @@ namespace antivirus.Legacy
             }
             catch (System.ComponentModel.Win32Exception win32Ex)
             {
-                Console.WriteLine($"Win32Exception: {win32Ex.Message}");
+                Console.WriteLine(win32Ex.ToString());
                 Console.WriteLine("Ensure curl is installed and available in the system's PATH.");
             }
             catch (Exception ex)
@@ -163,7 +175,7 @@ namespace antivirus.Legacy
             }
             catch (System.ComponentModel.Win32Exception win32Ex)
             {
-                Console.WriteLine($"Win32Exception: {win32Ex.Message}");
+                Console.WriteLine(win32Ex.ToString());
                 Console.WriteLine("Ensure the installer path is correct and you have the necessary permissions.");
             }
             catch (Exception ex)
@@ -233,7 +245,7 @@ namespace antivirus.Legacy
             }
             catch (System.ComponentModel.Win32Exception win32Ex)
             {
-                Console.WriteLine($"Win32Exception: {win32Ex.Message}");
+                Console.WriteLine(win32Ex.ToString());
                 Console.WriteLine("Ensure clamdscan is installed and available in the system's PATH.");
             }
             catch (Exception ex)

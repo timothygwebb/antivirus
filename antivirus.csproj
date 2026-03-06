@@ -16,9 +16,9 @@
     <Compile Remove="AntivirusTests\**" />
     <EmbeddedResource Remove="AntivirusTests\**" />
     <None Remove="AntivirusTests\**" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="antivirus.Legacy\antivirus.Legacy.csproj" />
+    <Compile Remove="antivirus.Legacy\**" />
+    <EmbeddedResource Remove="antivirus.Legacy\**" />
+    <None Remove="antivirus.Legacy\**" />
   </ItemGroup>
   <ItemGroup>
     <Compile Update="Properties\Resources.Designer.cs">

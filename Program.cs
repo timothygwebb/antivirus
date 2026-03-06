@@ -149,8 +149,7 @@ namespace antivirus
 
         private static bool IsLegacyWindows()
         {
-            var os = Environment.OSVersion;
-            return os.Platform == PlatformID.Win32Windows && (os.Version.Major < 5); // Windows Me/98/95
+            return Environment.OSVersion.Platform == PlatformID.Win32Windows && (Environment.OSVersion.Version.Major < 5); // Windows Me/98/95
         }
     }
 }
