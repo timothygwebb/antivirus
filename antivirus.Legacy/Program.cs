@@ -124,21 +124,37 @@ namespace antivirus.Legacy
         {
             try
             {
-                ProcessStartInfo processInfo = new ProcessStartInfo
-                {
-                    FileName = executableName,
-                    Arguments = "--version",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
+                string pathVariable = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+                string[] paths = pathVariable.Split(Path.PathSeparator);
+                string defaultPathExt = ".com;.exe;.bat;.cmd;.vbs;.vbe;.js;.jse;.wsf;.wsh;.msc";
+                string[] extensions = (Environment.GetEnvironmentVariable("PATHEXT") ?? defaultPathExt).Split(';');
+                bool hasExtension = !string.IsNullOrEmpty(Path.GetExtension(executableName));
 
-                using (Process process = Process.Start(processInfo))
+                foreach (string pathEntry in paths)
                 {
-                    process.WaitForExit();
-                    return process.ExitCode == 0;
+                    if (string.IsNullOrEmpty(pathEntry))
+                        continue;
+
+                    string trimmedPath = pathEntry.Trim();
+
+                    // Check exact name first (handles cases where extension is already included)
+                    string fullPath = Path.Combine(trimmedPath, executableName);
+                    if (File.Exists(fullPath))
+                        return true;
+
+                    // Check with each known executable extension only if name has no extension
+                    if (!hasExtension)
+                    {
+                        foreach (string ext in extensions)
+                        {
+                            string fullPathWithExt = Path.Combine(trimmedPath, executableName + ext);
+                            if (File.Exists(fullPathWithExt))
+                                return true;
+                        }
+                    }
                 }
+
+                return false;
             }
             catch (Exception ex)
             {
