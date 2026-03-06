@@ -48,6 +48,9 @@ namespace antivirus.Legacy
                 Directory.CreateDirectory(quarantineDir);
             }
             QuarantineInfectedFiles(scanDir, quarantineDir);
+
+            Console.WriteLine("Press Enter to exit...");
+            Console.ReadLine();
         }
 
         private static void DownloadWithCurl(string url, string destinationPath)
@@ -98,7 +101,7 @@ namespace antivirus.Legacy
             }
             catch (System.ComponentModel.Win32Exception win32Ex)
             {
-                Console.WriteLine($"Win32Exception: {win32Ex.Message}");
+                Console.WriteLine(win32Ex.ToString());
                 Console.WriteLine("Ensure curl is installed and available in the system's PATH.");
             }
             catch (Exception ex)
@@ -163,7 +166,7 @@ namespace antivirus.Legacy
             }
             catch (System.ComponentModel.Win32Exception win32Ex)
             {
-                Console.WriteLine($"Win32Exception: {win32Ex.Message}");
+                Console.WriteLine(win32Ex.ToString());
                 Console.WriteLine("Ensure the installer path is correct and you have the necessary permissions.");
             }
             catch (Exception ex)
@@ -233,7 +236,7 @@ namespace antivirus.Legacy
             }
             catch (System.ComponentModel.Win32Exception win32Ex)
             {
-                Console.WriteLine($"Win32Exception: {win32Ex.Message}");
+                Console.WriteLine(win32Ex.ToString());
                 Console.WriteLine("Ensure clamdscan is installed and available in the system's PATH.");
             }
             catch (Exception ex)
