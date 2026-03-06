@@ -126,21 +126,48 @@ namespace antivirus.Legacy
         {
             try
             {
-                ProcessStartInfo processInfo = new ProcessStartInfo
-                {
-                    FileName = executableName,
-                    Arguments = "--version",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
+                string pathVariable = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+                string[] paths = pathVariable.Split(Path.PathSeparator);
 
-                using (Process process = Process.Start(processInfo))
+                // Only consider extensions that can be launched with UseShellExecute = false
+                string[] allowedExtensions = { ".exe", ".com" };
+                string pathextValue = Environment.GetEnvironmentVariable("PATHEXT") ?? string.Join(";", allowedExtensions);
+                string[] allExtensions = pathextValue.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                string[] extensions = Array.FindAll(
+                    allExtensions,
+                    ext => Array.Exists(allowedExtensions, a => a.Equals(ext, StringComparison.OrdinalIgnoreCase)));
+                if (extensions.Length == 0)
+                    extensions = allowedExtensions;
+
+                bool hasExtension = !string.IsNullOrEmpty(Path.GetExtension(executableName));
+
+                foreach (string pathEntry in paths)
                 {
-                    process.WaitForExit();
-                    return process.ExitCode == 0;
+                    if (string.IsNullOrEmpty(pathEntry))
+                        continue;
+
+                    // Normalize: remove surrounding quotes and expand embedded environment variables
+                    string normalizedPath = pathEntry.Trim().Trim('"');
+                    normalizedPath = Environment.ExpandEnvironmentVariables(normalizedPath);
+
+                    // Check exact name first (handles cases where extension is already included)
+                    string fullPath = Path.Combine(normalizedPath, executableName);
+                    if (File.Exists(fullPath))
+                        return true;
+
+                    // Check with each real executable extension only if name has no extension
+                    if (!hasExtension)
+                    {
+                        foreach (string ext in extensions)
+                        {
+                            string fullPathWithExt = Path.Combine(normalizedPath, executableName + ext);
+                            if (File.Exists(fullPathWithExt))
+                                return true;
+                        }
+                    }
                 }
+
+                return false;
             }
             catch (Exception ex)
             {
