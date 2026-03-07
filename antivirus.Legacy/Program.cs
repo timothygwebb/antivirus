@@ -79,7 +79,7 @@ namespace antivirus.Legacy
                 }
 
                 string curlPath = "curl";
-                string arguments = $"-L -o \"{destinationPath}\" \"{url}\"";
+                string arguments = $"--fail -L -o \"{destinationPath}\" \"{url}\"";
 
                 Console.WriteLine($"Executing curl command: {curlPath} {arguments}");
 
@@ -305,10 +305,16 @@ namespace antivirus.Legacy
                     return;
                 }
 
+                // Use the same conf directory that ConfigureClamAV() writes to
+                string confDir = FindClamAVInstallDirectory() ?? Directory.GetCurrentDirectory();
+                string freshclamConf = Path.Combine(confDir, "freshclam.conf");
+
                 Console.WriteLine("Downloading ClamAV virus definitions with freshclam...");
                 ProcessStartInfo processInfo = new ProcessStartInfo
                 {
                     FileName = freshclamPath,
+                    Arguments = File.Exists(freshclamConf) ? $"--config-file=\"{freshclamConf}\"" : string.Empty,
+                    WorkingDirectory = confDir,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -329,8 +335,15 @@ namespace antivirus.Legacy
                     if (process.ExitCode == 0)
                         Console.WriteLine("ClamAV virus definitions downloaded successfully.");
                     else
-                        Console.WriteLine("freshclam completed with warnings. Check the output above.");
+                    {
+                        Console.WriteLine($"freshclam failed with exit code {process.ExitCode}. Check the output above.");
+                        throw new InvalidOperationException($"freshclam failed with exit code {process.ExitCode}.");
+                    }
                 }
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

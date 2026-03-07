@@ -677,7 +677,7 @@ namespace antivirus
                         return false;
                 }
                 string headerStr = Encoding.ASCII.GetString(header);
-                return headerStr.StartsWith("ClamAV-VDB:");
+                return headerStr.StartsWith("ClamAV-VDB:", StringComparison.Ordinal);
             }
             catch (IOException ex)
             {
@@ -714,7 +714,7 @@ namespace antivirus
                     if (File.Exists(cvdPath) || File.Exists(cldPath))
                     {
                         string existing = File.Exists(cvdPath) ? cvdPath : cldPath;
-                        Logger.LogError($"ClamAV definition file is malformed or not a valid CVD file: {existing}", new object[0]);
+                        Logger.LogError($"ClamAV definition file is malformed or not a valid CVD/CLD file: {existing}", new object[0]);
                     }
                     else
                     {
