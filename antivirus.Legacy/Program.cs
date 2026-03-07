@@ -20,7 +20,7 @@ namespace antivirus.Legacy
 
                 // Step 1: Download and install ClamAV
                 string clamavInstallerPath = Path.Combine(installersDir, "clamav-1.0.9.win.win32.msi");
-                string clamavDownloadUrl = "https://clamav-site.s3.amazonaws.com/production/release_files/files/000/002/065/original/clamav-1.0.9.win.win32.msi?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAU7AK5ITMMOVIJYX4%2F20260223%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260223T005519Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=3d59ea5619c1d8fb3120c16f6d6dbb17b2a62e982fb06cdeaaf508463856cda2"; // Updated URL
+                string clamavDownloadUrl = "https://github.com/Cisco-Talos/clamav/releases/download/clamav-1.0.9/clamav-1.0.9.win.win32.msi";
                 DownloadWithCurl(clamavDownloadUrl, clamavInstallerPath);
 
                 bool installSuccess = false;
@@ -36,14 +36,18 @@ namespace antivirus.Legacy
                 // Step 2: Configure ClamAV
                 ConfigureClamAV();
 
+                // Step 2b: Download virus definitions using freshclam
+                RunFreshclam();
+
                 // Step 3: Scan files
                 string scanDir = Path.Combine(Directory.GetCurrentDirectory(), "ScanDirectory");
                 if (!Directory.Exists(scanDir))
                 {
                     Directory.CreateDirectory(scanDir);
                 }
-                string clamdscanPath = FindClamdscanExecutable();
-                ScanFiles(scanDir, clamdscanPath);
+                string clamscanPath = FindClamscanExecutable();
+                string dbDir = FindClamAVDatabaseDirectory();
+                ScanFiles(scanDir, clamscanPath, dbDir);
 
                 // Step 4: Quarantine infected files
                 string quarantineDir = Path.Combine(Directory.GetCurrentDirectory(), "Quarantine");
@@ -75,7 +79,7 @@ namespace antivirus.Legacy
                 }
 
                 string curlPath = "curl";
-                string arguments = $"-o \"{destinationPath}\" \"{url}\"";
+                string arguments = $"--fail -L -o \"{destinationPath}\" \"{url}\"";
 
                 Console.WriteLine($"Executing curl command: {curlPath} {arguments}");
 
@@ -245,14 +249,138 @@ namespace antivirus.Legacy
             }
             return null;
         }
+
+        private static string FindClamscanExecutable()
+        {
+            // Prefer standalone clamscan.exe (does not require running daemon)
+            if (IsExecutableAvailable("clamscan"))
+                return "clamscan";
+
+            string programFilesX86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? string.Empty;
+            string[] commonPaths = new string[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClamAV\\clamscan.exe"),
+                !string.IsNullOrEmpty(programFilesX86) ? Path.Combine(programFilesX86, "ClamAV\\clamscan.exe") : string.Empty,
+                Path.Combine(Directory.GetCurrentDirectory(), "clamscan.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers\\clamscan.exe")
+            };
+            foreach (string path in commonPaths)
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    return path;
+            }
+            // Fall back to clamdscan if clamscan is not found
+            return FindClamdscanExecutable();
+        }
+
+        private static string FindFreshclamExecutable()
+        {
+            if (IsExecutableAvailable("freshclam"))
+                return "freshclam";
+
+            string programFilesX86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? string.Empty;
+            string[] commonPaths = new string[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClamAV\\freshclam.exe"),
+                !string.IsNullOrEmpty(programFilesX86) ? Path.Combine(programFilesX86, "ClamAV\\freshclam.exe") : string.Empty,
+                Path.Combine(Directory.GetCurrentDirectory(), "freshclam.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers\\freshclam.exe")
+            };
+            foreach (string path in commonPaths)
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    return path;
+            }
+            return null;
+        }
+
+        private static void RunFreshclam()
+        {
+            try
+            {
+                string freshclamPath = FindFreshclamExecutable();
+                if (string.IsNullOrEmpty(freshclamPath))
+                {
+                    Console.WriteLine("freshclam.exe not found. Virus definition databases may not be up to date.");
+                    return;
+                }
+
+                // Use the same conf directory that ConfigureClamAV() writes to
+                string confDir = FindClamAVInstallDirectory() ?? Directory.GetCurrentDirectory();
+                string freshclamConf = Path.Combine(confDir, "freshclam.conf");
+
+                Console.WriteLine("Downloading ClamAV virus definitions with freshclam...");
+                ProcessStartInfo processInfo = new ProcessStartInfo
+                {
+                    FileName = freshclamPath,
+                    Arguments = File.Exists(freshclamConf) ? $"--config-file=\"{freshclamConf}\"" : string.Empty,
+                    WorkingDirectory = confDir,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using (Process process = Process.Start(processInfo))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+
+                    if (!string.IsNullOrEmpty(output))
+                        Console.WriteLine($"freshclam output: {output}");
+                    if (!string.IsNullOrEmpty(error))
+                        Console.WriteLine($"freshclam messages: {error}");
+
+                    if (process.ExitCode == 0)
+                        Console.WriteLine("ClamAV virus definitions downloaded successfully.");
+                    else
+                    {
+                        Console.WriteLine($"freshclam failed with exit code {process.ExitCode}. Check the output above.");
+                        throw new InvalidOperationException($"freshclam failed with exit code {process.ExitCode}.");
+                    }
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to run freshclam: {ex.Message}");
+            }
+        }
         private static void ConfigureClamAV()
         {
             try
             {
                 Console.WriteLine("Configuring ClamAV...");
-                string configPath = Path.Combine(Directory.GetCurrentDirectory(), "clamd.conf");
-                File.WriteAllText(configPath, "# Example ClamAV configuration\nLogFile C:\\clamav\\clamd.log\nDatabaseDirectory C:\\clamav\\db\nLocalSocket C:\\clamav\\clamd.sock\n");
-                Console.WriteLine("ClamAV configured successfully.");
+                string clamavInstallDir = FindClamAVInstallDirectory();
+                string dbDir = !string.IsNullOrEmpty(clamavInstallDir)
+                    ? Path.Combine(clamavInstallDir, "database")
+                    : Path.Combine(Directory.GetCurrentDirectory(), "clamav-db");
+
+                if (!Directory.Exists(dbDir))
+                    Directory.CreateDirectory(dbDir);
+
+                // Write clamd.conf to the ClamAV install directory (or current dir as fallback)
+                string confDir = !string.IsNullOrEmpty(clamavInstallDir) ? clamavInstallDir : Directory.GetCurrentDirectory();
+                string configPath = Path.Combine(confDir, "clamd.conf");
+                File.WriteAllText(configPath,
+                    "# ClamAV daemon configuration\n" +
+                    $"DatabaseDirectory {dbDir}\n" +
+                    "TCPSocket 3310\n" +
+                    "TCPAddr 127.0.0.1\n" +
+                    "ScanPE true\n");
+
+                // Write freshclam.conf so freshclam knows where to save databases
+                string freshclamConfPath = Path.Combine(confDir, "freshclam.conf");
+                File.WriteAllText(freshclamConfPath,
+                    "# ClamAV freshclam configuration\n" +
+                    $"DatabaseDirectory {dbDir}\n" +
+                    "DatabaseMirror database.clamav.net\n");
+
+                Console.WriteLine($"ClamAV configured successfully. Database directory: {dbDir}");
             }
             catch (Exception ex)
             {
@@ -260,23 +388,66 @@ namespace antivirus.Legacy
             }
         }
 
+        private static string FindClamAVInstallDirectory()
+        {
+            string programFilesX86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? string.Empty;
+            string[] commonDirs = new string[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClamAV"),
+                !string.IsNullOrEmpty(programFilesX86) ? Path.Combine(programFilesX86, "ClamAV") : string.Empty,
+                @"C:\ClamAV",
+                Path.Combine(Directory.GetCurrentDirectory(), "ClamAV")
+            };
+            foreach (string dir in commonDirs)
+            {
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                    return dir;
+            }
+            return null;
+        }
+
+        private static string FindClamAVDatabaseDirectory()
+        {
+            string installDir = FindClamAVInstallDirectory();
+            if (!string.IsNullOrEmpty(installDir))
+            {
+                string dbDir = Path.Combine(installDir, "database");
+                if (Directory.Exists(dbDir))
+                    return dbDir;
+            }
+            string fallback = Path.Combine(Directory.GetCurrentDirectory(), "clamav-db");
+            if (Directory.Exists(fallback))
+                return fallback;
+            return null;
+        }
+
         // Removed duplicate void ScanFiles
-        private static void ScanFiles(string directory, string clamdscanPath)
+        private static void ScanFiles(string directory, string clamscanPath, string databaseDirectory)
         {
             try
             {
-                if (string.IsNullOrEmpty(clamdscanPath) || (!clamdscanPath.Equals("clamdscan") && !File.Exists(clamdscanPath)))
+                if (string.IsNullOrEmpty(clamscanPath) ||
+                    (!clamscanPath.Equals("clamscan", StringComparison.OrdinalIgnoreCase) &&
+                     !clamscanPath.Equals("clamdscan", StringComparison.OrdinalIgnoreCase) &&
+                     !File.Exists(clamscanPath)))
                 {
-                    Console.WriteLine("clamdscan.exe is not available on this system. Please ensure ClamAV is installed and the executable is in the system's PATH or specify its location.");
+                    Console.WriteLine("clamscan.exe is not available on this system. Please ensure ClamAV is installed and the executable is in the system's PATH or specify its location.");
                     return;
                 }
 
-                Console.WriteLine($"Scanning files with: {clamdscanPath}");
-                string arguments = $"--infected --remove {directory}";
+                Console.WriteLine($"Scanning files with: {clamscanPath}");
+
+                // Build arguments: pass --database when using standalone clamscan with a known db directory
+                string arguments;
+                bool isClamscan = Path.GetFileNameWithoutExtension(clamscanPath).Equals("clamscan", StringComparison.OrdinalIgnoreCase);
+                if (isClamscan && !string.IsNullOrEmpty(databaseDirectory) && Directory.Exists(databaseDirectory))
+                    arguments = $"--database=\"{databaseDirectory}\" --infected --remove \"{directory}\"";
+                else
+                    arguments = $"--infected --remove \"{directory}\"";
 
                 ProcessStartInfo processInfo = new ProcessStartInfo
                 {
-                    FileName = clamdscanPath,
+                    FileName = clamscanPath,
                     Arguments = arguments,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -286,17 +457,18 @@ namespace antivirus.Legacy
 
                 using (Process process = Process.Start(processInfo))
                 {
-                    process.WaitForExit();
-
                     string standardOutput = process.StandardOutput.ReadToEnd();
                     string errorOutput = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
 
-                    Console.WriteLine($"clamdscan standard output: {standardOutput}");
-                    Console.WriteLine($"clamdscan error output: {errorOutput}");
+                    Console.WriteLine($"clamscan standard output: {standardOutput}");
+                    if (!string.IsNullOrEmpty(errorOutput))
+                        Console.WriteLine($"clamscan error output: {errorOutput}");
 
-                    if (process.ExitCode != 0)
+                    if (process.ExitCode != 0 && process.ExitCode != 1)
                     {
-                        Console.WriteLine($"clamdscan failed with error: {errorOutput}");
+                        // Exit code 0 = no virus found, 1 = virus found, other = error
+                        Console.WriteLine($"clamscan failed with exit code {process.ExitCode}: {errorOutput}");
                     }
                     else
                     {
@@ -307,7 +479,7 @@ namespace antivirus.Legacy
             catch (System.ComponentModel.Win32Exception win32Ex)
             {
                 Console.WriteLine(win32Ex.ToString());
-                Console.WriteLine("Ensure clamdscan is installed and available in the system's PATH.");
+                Console.WriteLine("Ensure clamscan is installed and available in the system's PATH.");
             }
             catch (Exception ex)
             {

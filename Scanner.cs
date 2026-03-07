@@ -658,6 +658,45 @@ namespace antivirus
         }
 
         /// <summary>
+        /// Validates that a CVD or CLD file is a genuine ClamAV virus database by checking its header.
+        /// </summary>
+        internal static bool IsValidCvdFile(string filePath)
+        {
+            try
+            {
+                if (!File.Exists(filePath))
+                    return false;
+                var info = new FileInfo(filePath);
+                if (info.Length < 12)
+                    return false;
+                byte[] header = new byte[12];
+                using (var fs = File.OpenRead(filePath))
+                {
+                    int read = fs.Read(header, 0, header.Length);
+                    if (read < 12)
+                        return false;
+                }
+                string headerStr = Encoding.ASCII.GetString(header);
+                return headerStr.StartsWith("ClamAV-VDB:", StringComparison.Ordinal);
+            }
+            catch (IOException ex)
+            {
+                Logger.LogWarning($"IO error validating CVD file '{filePath}': {ex.Message}", new object[0]);
+                return false;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Logger.LogWarning($"Access denied validating CVD file '{filePath}': {ex.Message}", new object[0]);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Error validating CVD file '{filePath}': {ex.Message}", new object[0]);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Ensures the ClamAV virus definitions exist in the ClamAV directory.
         /// </summary>
         public static bool EnsureClamAVDefinitionsExist()
@@ -668,19 +707,29 @@ namespace antivirus
             {
                 string cvdPath = Path.Combine(ClamAVDir, def + ".cvd");
                 string cldPath = Path.Combine(ClamAVDir, def + ".cld");
-                if (!File.Exists(cvdPath) && !File.Exists(cldPath))
+                bool cvdValid = IsValidCvdFile(cvdPath);
+                bool cldValid = IsValidCvdFile(cldPath);
+                if (!cvdValid && !cldValid)
                 {
-                    Logger.LogError($"ClamAV definition missing: {cvdPath} or {cldPath}", new object[0]);
+                    if (File.Exists(cvdPath) || File.Exists(cldPath))
+                    {
+                        string existing = File.Exists(cvdPath) ? cvdPath : cldPath;
+                        Logger.LogError($"ClamAV definition file is malformed or not a valid CVD/CLD file: {existing}", new object[0]);
+                    }
+                    else
+                    {
+                        Logger.LogError($"ClamAV definition missing: {cvdPath} or {cldPath}", new object[0]);
+                    }
                     allExist = false;
                 }
             }
             if (!allExist)
             {
-                Logger.LogError("One or more ClamAV definitions are missing. Please run freshclam or update ClamAV definitions.", new object[0]);
+                Logger.LogError("One or more ClamAV definitions are missing or invalid. Please run freshclam or update ClamAV definitions.", new object[0]);
             }
             else
             {
-                Logger.LogInfo("All required ClamAV definitions are present in the ClamAV directory.", new object[0]);
+                Logger.LogInfo("All required ClamAV definitions are present and valid in the ClamAV directory.", new object[0]);
             }
             return allExist;
         }
@@ -817,8 +866,20 @@ namespace antivirus
 
         public static bool DefinitionsExist()
         {
-            // Logic to check if definitions exist
-            return Directory.Exists(Scanner.ClamAVDir) && Directory.GetFiles(Scanner.ClamAVDir, "*.cvd").Length > 0;
+            // Check that at least one valid CVD or CLD definition file exists
+            if (!Directory.Exists(Scanner.ClamAVDir))
+                return false;
+            foreach (string filePath in Directory.GetFiles(Scanner.ClamAVDir, "*.cvd"))
+            {
+                if (Scanner.IsValidCvdFile(filePath))
+                    return true;
+            }
+            foreach (string filePath in Directory.GetFiles(Scanner.ClamAVDir, "*.cld"))
+            {
+                if (Scanner.IsValidCvdFile(filePath))
+                    return true;
+            }
+            return false;
         }
     }
 }
