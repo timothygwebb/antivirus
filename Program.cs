@@ -97,20 +97,21 @@ namespace antivirus
                 // 4. Ensure browser installers for current OS
                 Scanner.EnsureBrowserInstallers();
 
-                // 5. Get scan path
-                Console.WriteLine("Enter a file or directory path to scan. Press Enter to use the default user profile directory:");
-                string defaultPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-                string input = Console.ReadLine();
-                if (string.IsNullOrEmpty(input))
-                {
-                    input = defaultPath;
-                    Logger.LogInfo("Using default path: " + defaultPath, new object[0]);
-                }
-                Logger.LogInfo("Starting scan for path: " + input, new object[0]);
-                Console.WriteLine("Scanning path: " + input);
 
-                // 6. Scan for malware
-                bool scanCompleted = Scanner.Scan(input);
+            // 5. Get scan path
+            Console.WriteLine("Enter a file or directory path to scan. Press Enter to use the default user profile directory:");
+            string defaultPath = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+            string input = Console.ReadLine();
+            if (string.IsNullOrEmpty(input))
+            {
+                input = defaultPath;
+                Logger.LogInfo("Using default path: " + defaultPath, new object[0]);
+            }
+            Logger.LogInfo("Starting scan for path: " + input, new object[0]);
+            Console.WriteLine("Scanning path: " + input);
+
+            // 6. Scan for malware
+            bool scanCompleted = Scanner.Scan(input);
 
                 // 7. Launch browser repair as a separate process if scan completed
                 if (scanCompleted)

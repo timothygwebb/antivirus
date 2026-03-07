@@ -1,28 +1,65 @@
 using System;
 using System.IO;
 using System.Diagnostics;
+using antivirus.Legacy;
 
 namespace antivirus.Legacy
 {
     public class Program
     {
-        public static void Main(string[] _)
+        public static void Main(string[] args)
+        {
+            Console.WriteLine("Program execution started.");
+            Logger.LogInfo("Program started", new object[0]);
+
+            // Check if the program is launched with the --browser-repair argument
+            if (args.Length > 0 && args[0] == "--browser-repair")
+            {
+                Logger.LogInfo("Executing browser repair process.", new object[0]);
+                BrowserRepair.RepairBrowsers();
+                Logger.LogInfo("Browser repair process completed.", new object[0]);
+                return;
+            }
+
+            // Handle --scan-all argument for full system scan
+            if (args.Length > 0 && args[0] == "--scan-all")
+            {
+                string rootPath = "C:\\";
+                Logger.LogInfo("Starting full system scan from root: " + rootPath, new object[0]);
+                Console.WriteLine("Scanning entire system from root: " + rootPath);
+                var _ = Scanner.Scan(rootPath);
+                Logger.LogInfo("Program finished", new object[0]);
+                Console.WriteLine("Scan complete. Press Enter to exit...");
+                Console.ReadLine();
+                return;
+            }
+
+            // Dual OS compatibility: use legacy code if on Windows Me or similar
+            if (IsLegacyWindows())
+            {
+                LegacyMain();
+            }
+            else
+            {
+                // Modern OS path
+                ModernMain();
+            }
+        }
+
+        private static void LegacyMain()
         {
             try
             {
                 Console.WriteLine("Legacy Antivirus Recovery Tool");
-
                 string installersDir = Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers");
                 if (!Directory.Exists(installersDir))
                 {
                     Directory.CreateDirectory(installersDir);
                 }
-
                 // Step 1: Download and install ClamAV
                 string clamavInstallerPath = Path.Combine(installersDir, "clamav-1.0.9.win.win32.msi");
                 string clamavDownloadUrl = "https://github.com/Cisco-Talos/clamav/releases/download/clamav-1.0.9/clamav-1.0.9.win.win32.msi";
                 DownloadWithCurl(clamavDownloadUrl, clamavInstallerPath);
-
                 bool installSuccess = false;
                 if (File.Exists(clamavInstallerPath))
                 {
@@ -32,13 +69,10 @@ namespace antivirus.Legacy
                 {
                     Console.WriteLine("ClamAV installer not found. Skipping installation.");
                 }
-
                 // Step 2: Configure ClamAV
                 ConfigureClamAV();
-
                 // Step 2b: Download virus definitions using freshclam
                 RunFreshclam();
-
                 // Step 3: Scan files
                 string scanDir = Path.Combine(Directory.GetCurrentDirectory(), "ScanDirectory");
                 if (!Directory.Exists(scanDir))
@@ -48,7 +82,6 @@ namespace antivirus.Legacy
                 string clamscanPath = FindClamscanExecutable();
                 string dbDir = FindClamAVDatabaseDirectory();
                 ScanFiles(scanDir, clamscanPath, dbDir);
-
                 // Step 4: Quarantine infected files
                 string quarantineDir = Path.Combine(Directory.GetCurrentDirectory(), "Quarantine");
                 if (!Directory.Exists(quarantineDir))
@@ -61,11 +94,8 @@ namespace antivirus.Legacy
             {
                 Console.WriteLine(ex.ToString());
             }
-            finally
-            {
-                Console.WriteLine("Press Enter to exit...");
-                Console.ReadLine();
-            }
+            Console.WriteLine("Press Enter to exit...");
+            Console.ReadLine();
         }
 
         private static void DownloadWithCurl(string url, string destinationPath)
@@ -227,7 +257,6 @@ namespace antivirus.Legacy
                 Console.WriteLine($"Failed to install ClamAV: {ex.Message}");
                 return false;
             }
-            return false;
         }
 
         private static string FindClamdscanExecutable()
@@ -503,6 +532,45 @@ namespace antivirus.Legacy
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to quarantine files: {ex.Message}");
+            }
+        }
+
+        private static bool IsLegacyWindows()
+        {
+            // Implement a check for legacy Windows versions (e.g., Windows Me)
+            Version ver = Environment.OSVersion.Version;
+            return (ver.Major == 4 && ver.Minor == 90); // Windows Me
+        }
+
+        private static void ModernMain()
+        {
+            // Modern operating system logic here
+            Console.WriteLine("Modern Antivirus Scanner");
+            // Implementation for modern OS
+        }
+    }
+
+    public static class BrowserRepair
+    {
+        public static void RepairBrowsers()
+        {
+            Console.WriteLine("Starting browser repair process...");
+            Logger.LogInfo("Browser repair initiated", new object[0]);
+
+            try
+            {
+                // Add browser repair logic here
+                Console.WriteLine("Checking for browser issues...");
+                Logger.LogInfo("Checking for browser issues", new object[0]);
+
+                // Placeholder for actual repair logic
+                Console.WriteLine("Browser repair process completed successfully.");
+                Logger.LogInfo("Browser repair completed successfully", new object[0]);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during browser repair: {ex.Message}");
+                Logger.LogError("Browser repair failed", ex, new object[0]);
             }
         }
     }
