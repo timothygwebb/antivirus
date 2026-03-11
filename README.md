@@ -1,64 +1,154 @@
 # Antivirus Solution
 
 ## Overview
-The Antivirus Solution is a cross-platform application designed to scan and remove malware, repair browser access, and manage ClamAV virus definitions. The tool is compatible with both modern operating systems (e.g., Windows 10/11) and older systems (e.g., Windows Me) through a dual OS compatibility mode.
+The Antivirus Solution is a .NET Framework 2.0 application designed to scan and remove malware, repair browser access, and manage ClamAV virus definitions. The solution contains two projects:
+- **antivirus.Legacy**: Main legacy antivirus application targeting .NET Framework 2.0 with full ClamAV integration
+- **antivirus**: Modern antivirus implementation with enhanced features
 
 ## Features
-- **Dual OS Compatibility**: Automatically detects the operating system and runs in compatibility mode for older systems.
-- **Malware Scanning**: Scans for and removes malware, including MBR infections.
-- **Browser Repair**: Repairs browser access by downloading and installing legacy browsers if needed. This process is now decoupled and runs as a separate process after a successful scan.
-- **ClamAV Integration**: Ensures virus definitions are up-to-date and performs scans using ClamAV.
-- **Logging**: Logs all actions to `antivirus.log` in the current directory.
-- **Modern TLS Support**: Uses `curl` for downloading files to ensure compatibility with modern TLS protocols.
+- **Full System Scanning**: Scans entire drives using ClamAV's clamscan.exe with real-time progress updates
+- **Real-Time Progress Tracking**: Live updates showing files scanned, threats found, elapsed time, and scan speed
+- **Automatic ClamAV Download**: Automatically downloads and extracts portable ClamAV if not found locally
+- **Virus Definition Updates**: Downloads latest virus signatures (3.6M+ signatures) via freshclam
+- **Browser Repair**: Detects and reports on installed browsers (Chrome, Firefox, Edge, Opera)
+- **Interactive Menu**: User-friendly console menu for all operations
+- **Command-Line Support**: `--scan-all` and `--browser-repair` arguments for automation
+- **Comprehensive Logging**: All operations logged to `antivirus.log` in the application directory
+- **No Admin Required**: Uses local portable ClamAV installation to avoid permission issues
 
 ## Requirements
-- .NET Framework 2.0
-- `curl` command-line tool installed and available in the system's PATH.
+- .NET Framework 2.0 or higher
+- Windows XP or later
+- `curl` command-line tool (typically pre-installed on Windows 10+)
+- PowerShell (for ZIP extraction of portable ClamAV)
+- Internet connection (for first-time ClamAV download and virus definition updates)
+
+## Project Structure
+
+### antivirus.Legacy Project
+```
+antivirus.Legacy/
+├── Program.cs                     # Main entry point with menu system and ClamAV management
+├── antivirus.Legacy/
+│   ├── Scanner.cs                 # Real-time ClamAV scanning with progress monitoring
+│   └── Logger.cs                  # Logging implementation
+├── ClamAV/                        # Auto-downloaded portable ClamAV installation
+│   ├── clamscan.exe              # ClamAV scanner executable
+│   ├── freshclam.exe             # Virus definition updater
+│   ├── freshclam.conf            # Configuration for definition updates
+│   └── database/                 # Virus signature databases (3.6M+ signatures)
+│       ├── main.cvd              # Main virus signatures
+│       ├── daily.cvd             # Daily virus updates
+│       └── bytecode.cvd          # Bytecode signatures
+└── antivirus.log                 # Application log file
+```
 
 ## Usage
 
-### Bootable CD/USB Usage
+### Interactive Menu Mode (Default)
+Run without arguments to access the interactive menu:
+```cmd
+antivirus.exe
+```
 
-1. **Create a Bootable USB or CD:**
-   - For USB: Use [Rufus](https://rufus.ie/) or similar to create a bootable Windows PE or minimal Linux environment.
-   - For CD: Use your favorite CD burning tool to create a bootable disc with Windows PE or a minimal Linux live CD.
+Menu Options:
+1. **Full System Scan** - Scans C:\ drive recursively for malware with real-time progress
+2. **Browser Repair** - Checks for and reports on installed browsers
+3. **Update Virus Definitions** - Downloads/updates ClamAV virus signatures
+4. **Exit** - Closes the application
 
-2. **Copy Files:**
-   - Copy the entire antivirus tool folder (including ClamAV, browser installers, .NET Framework 2.0 installer, and all dependencies) to the root of the USB/CD.
+### Command-Line Arguments
 
-3. **Boot the Target System:**
-   - Boot the computer from the USB or CD (you may need to change the boot order in BIOS/UEFI).
+**Full System Scan:**
+```cmd
+antivirus.exe --scan-all
+```
 
-4. **Run the Antivirus Tool:**
-   - If the app does not start automatically, open the USB/CD in Explorer or a terminal and run `antivirus.exe` or use the provided `start-antivirus.bat` script.
+**Browser Repair Only:**
+```cmd
+antivirus.exe --browser-repair
+```
 
-5. **What the Tool Does:**
-   - Scans for and removes malware, including MBR infections.
-   - Attempts to repair browser access by downloading and installing legacy browsers if needed. This step is now performed as a separate process after the scan completes.
-   - Logs all actions to `antivirus.log` in the current directory.
+## First-Time Setup
 
-6. **No Internet?**
-   - All required tools are included on the media. If network access is restored, the tool will attempt to update ClamAV and browsers automatically.
+On first run, when selecting "Update Virus Definitions" (option 3):
+1. Detects no local ClamAV installation
+2. Downloads portable ClamAV (~217MB) from clamav.net
+3. Extracts using PowerShell Expand-Archive
+4. Configures local database directory
+5. Downloads virus signatures (main.cvd, daily.cvd, bytecode.cvd)
+6. ✓ Ready to scan!
 
----
+**Important:** Always run option 3 (Update Virus Definitions) before your first scan!
 
-## Development
+## Scanning Progress Display
 
-### Project Structure
-- **Program.cs**: Entry point of the application. Implements dual OS compatibility logic and launches browser repair as a separate process after a successful scan.
-- **Scanner.cs**: Handles malware scanning and ClamAV integration. Ensures ClamAV daemon readiness and virus definitions. Now uses `curl` for all downloads.
-- **MBRChecker.cs**: Checks and cleanses the Master Boot Record (MBR).
-- **DefaultLogger.cs**: Provides logging functionality.
-- **ClamAVDefinitionsManager.cs**: Manages ClamAV virus definitions.
-- **Definitions.cs**: Handles virus definitions database.
-- **BrowserRepair.cs**: Repairs browser access and installs legacy browsers. Now executed as a separate process.
-- **Quarantine.cs**: Manages quarantining of infected files.
+During a full system scan, you'll see real-time updates:
+```
+Progress: 5,234 files | 0 threats | Elapsed: 00:00:10 | Speed: 523 files/sec
+Progress: 12,891 files | 0 threats | Elapsed: 00:00:20 | Speed: 645 files/sec
+⚠ INFECTED: C:\Temp\suspicious.exe
+Progress: 18,456 files | 1 threats | Elapsed: 00:00:30 | Speed: 615 files/sec
+```
+
+Final results show:
+```
+========== SCAN RESULTS ==========
+Status: COMPLETED
+Directories Scanned: 250,961
+Files Scanned: 1,168,673
+Infections Found: 1
+Files Quarantined: 0
+
+⚠ WARNING: 1 threat(s) detected!
+==================================
+```
+
+## Configuration
+
+All configuration is automatic. The application creates:
+- `./ClamAV/` - Portable ClamAV installation
+- `./ClamAV/database/` - Virus signature databases
+- `./ClamAV/freshclam.conf` - Update configuration
+- `./antivirus.log` - Application log
+
+## Troubleshooting
+
+**"freshclam.exe not found"**
+- Run option 3 to automatically download portable ClamAV
+- Requires internet connection and ~217MB download
+
+**"clamscan.exe not found"**
+- Run option 3 first to download and extract ClamAV
+- Verify `./ClamAV/clamscan.exe` exists after update
+
+**"Database not found"**
+- Run option 3 to download virus signatures
+- Check that `./ClamAV/database/` contains .cvd files
+
+**Scan shows 0 infections but you suspect malware**
+- Ensure virus definitions are up-to-date (run option 3)
+- Check that 3.6M+ signatures loaded during update
+- Some rootkits may hide from user-mode scanners
+
+**Permission errors**
+- Application uses local portable ClamAV to avoid admin requirements
+- If errors persist, try running from a user-writable directory
+
+## Technical Details
+
+- **Scanner Type**: ClamAV clamscan.exe (standalone, no daemon required)
+- **Virus Signatures**: 3.6+ million (main.cvd + daily.cvd + bytecode.cvd)
+- **Scan Method**: Recursive directory traversal with real-time monitoring
+- **Progress Updates**: Every 2 seconds via asynchronous output reading
+- **Infection Detection**: Parses "FOUND" keywords from clamscan output
+- **.NET Target**: Framework 2.0 for maximum compatibility
 
 ## Contributing
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix.
-3. Commit your changes with clear and concise messages.
-4. Submit a pull request for review.
+1. Fork the repository at https://github.com/timothygwebb/antivirus
+2. Create a feature branch
+3. Follow existing code style (C# 7.3, .NET Framework 2.0 compatibility)
+4. Submit a pull request with clear descriptions
 
 ## License
 This project is licensed under the MIT License. See the LICENSE file for details.
