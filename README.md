@@ -19,9 +19,46 @@ The Antivirus Solution is a .NET Framework 2.0 application designed to scan and 
 ## Requirements
 - .NET Framework 2.0 or higher
 - **Windows XP or later** (or Windows ME with KernelEX - see below)
-- `curl` command-line tool (typically pre-installed on Windows 10+)
-- PowerShell (for ZIP extraction of portable ClamAV)
+- **curl** (bundled with application or system-installed)
+- **PowerShell** (for ZIP extraction on Windows XP+, not required for Windows ME)
 - Internet connection (for first-time ClamAV download and virus definition updates)
+
+### Platform-Specific Requirements
+
+| Platform | .NET 2.0 | curl | PowerShell | ZIP Extraction |
+|----------|----------|------|------------|----------------|
+| Windows ME | ✓ | Bundled | ❌ Not available | COM (Shell.Application) |
+| Windows XP | ✓ | Bundled | ❌ Optional | COM (Shell.Application) |
+| Windows Vista+ | ✓ | Bundled | ✓ | PowerShell (faster) |
+| Windows 10+ | ✓ | Built-in | ✓ | PowerShell (faster) |
+
+**Note:** The application automatically detects the OS and uses the appropriate extraction method:
+- **Windows ME**: Uses COM-based extraction (no PowerShell attempt)
+- **Windows XP+**: Tries PowerShell first, falls back to COM if unavailable
+
+## Bundled Tools
+
+The application includes **curl.exe** (32-bit static build) in the `Tools` directory for compatibility with systems that don't have curl pre-installed (Windows ME, XP, etc.).
+
+### First-Time Setup (Developers/Distributors)
+
+Before distributing, download curl.exe:
+
+```powershell
+cd antivirus.Legacy
+.\Download-Curl.ps1
+```
+
+This downloads curl.exe (~3-4MB) to the `Tools` directory, which is automatically copied to the output when building.
+
+### curl Priority Order
+
+The application looks for curl in this order:
+1. **Bundled**: `.\Tools\curl.exe` (recommended for portability)
+2. **Local**: `.\curl.exe` (application directory)
+3. **System**: curl in PATH (Windows 10+ default)
+
+If none are found, downloads will fail with instructions to add curl.
 
 ## Platform Support
 

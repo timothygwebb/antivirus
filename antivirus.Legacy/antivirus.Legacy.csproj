@@ -6,4 +6,9 @@
     <AssemblyName>antivirus.Legacy</AssemblyName>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
+
+  <!-- Include bundled tools (curl.exe) in output -->
+  <ItemGroup>
+    <None Include="Tools\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -190,16 +190,26 @@ namespace antivirus.Legacy
         {
             try
             {
-                if (!IsExecutableAvailable("curl"))
+                // Check for bundled curl.exe first, then system curl
+                string curlPath = FindCurlExecutable();
+
+                if (string.IsNullOrEmpty(curlPath))
                 {
-                    Console.WriteLine("curl is not available on this system. Please install curl or download the file manually.");
+                    Console.WriteLine("ERROR: curl is not available.");
+                    Console.WriteLine("curl is required for downloading files with TLS/SSL support.");
+                    Console.WriteLine();
+                    Console.WriteLine("Options:");
+                    Console.WriteLine("  1. Run Download-Curl.ps1 to download bundled curl.exe");
+                    Console.WriteLine("  2. Install curl and add to system PATH");
+                    Console.WriteLine("  3. Manually download files and place in appropriate directories");
+                    Logger.LogError("curl not found - cannot download files", new object[0]);
                     return;
                 }
 
-                string curlPath = "curl";
                 string arguments = $"--fail -L -o \"{destinationPath}\" \"{url}\"";
 
-                Console.WriteLine($"Executing curl command: {curlPath} {arguments}");
+                Console.WriteLine($"Using curl: {curlPath}");
+                Console.WriteLine($"Downloading: {url}");
 
                 ProcessStartInfo processInfo = new ProcessStartInfo
                 {
@@ -242,6 +252,30 @@ namespace antivirus.Legacy
                 Console.WriteLine($"Failed to use curl for downloading: {ex.Message}");
                 Console.WriteLine("Please download the file manually and place it in the appropriate directory.");
             }
+        }
+
+        private static string FindCurlExecutable()
+        {
+            // Priority 1: Check for bundled curl.exe in Tools directory
+            string toolsDir = Path.Combine(Directory.GetCurrentDirectory(), "Tools");
+            string bundledCurl = Path.Combine(toolsDir, "curl.exe");
+            if (File.Exists(bundledCurl))
+            {
+                Console.WriteLine("Using bundled curl.exe");
+                return bundledCurl;
+            }
+
+            // Priority 2: Check application directory
+            string localCurl = Path.Combine(Directory.GetCurrentDirectory(), "curl.exe");
+            if (File.Exists(localCurl))
+                return localCurl;
+
+            // Priority 3: Check system PATH
+            if (IsExecutableAvailable("curl"))
+                return "curl";
+
+            // Not found
+            return null;
         }
 
         private static bool IsExecutableAvailable(string executableName)
@@ -643,57 +677,63 @@ namespace antivirus.Legacy
 
                 Console.WriteLine("Extracting files, please wait...");
 
-                // Try PowerShell Expand-Archive first (more reliable for large files)
-                try
+                // Skip PowerShell on Windows ME (not available on Windows 9x)
+                bool useComExtraction = IsLegacyWindows();
+
+                if (!useComExtraction)
                 {
-                    ProcessStartInfo psi = new ProcessStartInfo
+                    // Try PowerShell Expand-Archive first (Windows XP+ with PowerShell)
+                    try
                     {
-                        FileName = "powershell.exe",
-                        Arguments = $"-NoProfile -Command \"Expand-Archive -Path '{zipFilePath}' -DestinationPath '{outputDirectory}' -Force\"",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    using (Process process = Process.Start(psi))
-                    {
-                        string output = process.StandardOutput.ReadToEnd();
-                        string error = process.StandardError.ReadToEnd();
-                        process.WaitForExit();
-
-                        if (process.ExitCode == 0)
+                        ProcessStartInfo psi = new ProcessStartInfo
                         {
-                            Console.WriteLine("ZIP extraction completed successfully.");
-                            return;
-                        }
-                        else
+                            FileName = "powershell.exe",
+                            Arguments = $"-NoProfile -Command \"Expand-Archive -Path '{zipFilePath}' -DestinationPath '{outputDirectory}' -Force\"",
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+
+                        using (Process process = Process.Start(psi))
                         {
-                            Console.WriteLine($"PowerShell extraction warning: {error}");
-                            // Fall through to COM method
+                            string output = process.StandardOutput.ReadToEnd();
+                            string error = process.StandardError.ReadToEnd();
+                            process.WaitForExit();
+
+                            if (process.ExitCode == 0)
+                            {
+                                Console.WriteLine("ZIP extraction completed successfully.");
+                                return;
+                            }
+                            else
+                            {
+                                Console.WriteLine($"PowerShell extraction failed, using COM method...");
+                                useComExtraction = true;
+                            }
                         }
                     }
+                    catch (Exception psEx)
+                    {
+                        Console.WriteLine($"PowerShell not available ({psEx.Message}), using COM method...");
+                        useComExtraction = true;
+                    }
                 }
-                catch (Exception psEx)
+                else
                 {
-                    Console.WriteLine($"PowerShell extraction not available: {psEx.Message}");
-                    Console.WriteLine("Trying alternative extraction method...");
+                    Console.WriteLine("Windows ME detected - using COM extraction method...");
                 }
 
-                // Fallback: Use Shell.Application COM object (for older systems)
-                Type shellType = Type.GetTypeFromProgID("Shell.Application");
-                if (shellType == null)
+                // Use Shell.Application COM object (for Windows ME and fallback)
+                Type shellType = Type.GetTypeFromProgID("Shell.Application") ?? 
                     throw new ApplicationException("No ZIP extraction method available.");
 
                 object shell = Activator.CreateInstance(shellType);
                 object zipFolder = shellType.InvokeMember("NameSpace", 
-                    System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { zipFilePath });
-                object destFolder = shellType.InvokeMember("NameSpace", 
-                    System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { outputDirectory });
-
-                if (zipFolder == null)
+                    System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { zipFilePath }) ?? 
                     throw new ApplicationException("Unable to open ZIP file.");
-                if (destFolder == null)
+                object destFolder = shellType.InvokeMember("NameSpace", 
+                    System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { outputDirectory }) ?? 
                     throw new ApplicationException("Unable to access output directory.");
 
                 object items = zipFolder.GetType().InvokeMember("Items",
