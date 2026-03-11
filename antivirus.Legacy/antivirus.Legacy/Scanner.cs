@@ -26,6 +26,15 @@ namespace antivirus.Legacy
             {
                 Console.WriteLine("Initializing ClamAV scanner...");
 
+                // Check for Windows ME and provide KernelEX guidance
+                Version osVersion = Environment.OSVersion.Version;
+                bool isWindowsME = (osVersion.Major == 4 && osVersion.Minor == 90);
+
+                if (isWindowsME)
+                {
+                    Console.WriteLine("Windows ME detected - Auto-configuring KernelEX compatibility for ClamAV...");
+                }
+
                 // Find clamscan.exe
                 string clamscanPath = FindClamscanExecutable();
                 if (string.IsNullOrEmpty(clamscanPath))
@@ -83,6 +92,12 @@ namespace antivirus.Legacy
                 DateTime scanStartTime = DateTime.Now;
                 DateTime lastUpdate = DateTime.Now;
                 List<string> allOutput = new List<string>();
+
+                // Auto-configure KernelEX if on Windows ME
+                if (isWindowsME)
+                {
+                    ConfigureKernelEXForExecutable(clamscanPath);
+                }
 
                 using (Process process = Process.Start(processInfo))
                 {
@@ -231,6 +246,27 @@ namespace antivirus.Legacy
                 return fallback;
 
             return null;
+        }
+
+        private static void ConfigureKernelEXForExecutable(string exePath)
+        {
+            // Automatically configure KernelEX compatibility for an executable on Windows ME
+            try
+            {
+                using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey("Software\\KernelEx"))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue(exePath, "Windows2000", Microsoft.Win32.RegistryValueKind.String);
+                        Console.WriteLine($"Auto-configured KernelEX compatibility for: {Path.GetFileName(exePath)}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not auto-configure KernelEX: {ex.Message}");
+                Console.WriteLine("If ClamAV fails, please install KernelEX from http://kernelex.sourceforge.net/");
+            }
         }
 
         public static void ReadMBR() { Console.WriteLine("Reading MBR..."); }

@@ -425,6 +425,13 @@ namespace antivirus.Legacy
         {
             try
             {
+                // Auto-configure KernelEX if on Windows ME
+                if (IsLegacyWindows())
+                {
+                    Console.WriteLine("Windows ME detected - Auto-configuring KernelEX compatibility...");
+                    Logger.LogInfo("Windows ME detected - applying KernelEX settings", new object[0]);
+                }
+
                 string freshclamPath = FindFreshclamExecutable();
                 if (string.IsNullOrEmpty(freshclamPath))
                 {
@@ -574,6 +581,13 @@ namespace antivirus.Legacy
                 string args = $"--config-file=\"{localFreshclamConf}\"";
                 Console.WriteLine($"freshclam arguments: {args}");
 
+                // Auto-configure KernelEX if on Windows ME
+                if (IsLegacyWindows() && File.Exists(freshclamPath))
+                {
+                    ConfigureKernelEXForExecutable(freshclamPath);
+                    System.Threading.Thread.Sleep(200); // Give registry time to sync
+                }
+
                 ProcessStartInfo processInfo = new ProcessStartInfo
                 {
                     FileName = freshclamPath,
@@ -585,7 +599,7 @@ namespace antivirus.Legacy
                     CreateNoWindow = true
                 };
 
-                using (Process process = Process.Start(processInfo))
+                using (Process process = StartProcessWithKernelEX(processInfo))
                 {
                     string output = process.StandardOutput.ReadToEnd();
                     string error = process.StandardError.ReadToEnd();
@@ -924,6 +938,43 @@ namespace antivirus.Legacy
             // Implement a check for legacy Windows versions (e.g., Windows Me)
             Version ver = Environment.OSVersion.Version;
             return (ver.Major == 4 && ver.Minor == 90); // Windows Me
+        }
+
+        private static void ConfigureKernelEXForExecutable(string exePath)
+        {
+            // Automatically configure KernelEX compatibility for an executable
+            // This sets the registry key that KernelEX uses to determine compatibility mode
+            try
+            {
+                using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey("Software\\KernelEx"))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue(exePath, "Windows2000", Microsoft.Win32.RegistryValueKind.String);
+                        Console.WriteLine($"Configured KernelEX for: {Path.GetFileName(exePath)}");
+                        Logger.LogInfo($"Applied KernelEX Windows2000 mode to {exePath}", new object[0]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Note: Could not auto-configure KernelEX: {ex.Message}");
+                Console.WriteLine("If ClamAV fails to run, please install KernelEX from http://kernelex.sourceforge.net/");
+            }
+        }
+
+        private static Process StartProcessWithKernelEX(ProcessStartInfo processInfo)
+        {
+            // If on Windows ME, auto-configure KernelEX before starting process
+            if (IsLegacyWindows() && File.Exists(processInfo.FileName))
+            {
+                ConfigureKernelEXForExecutable(processInfo.FileName);
+
+                // Give registry time to sync
+                System.Threading.Thread.Sleep(100);
+            }
+
+            return Process.Start(processInfo);
         }
 
         private static void ModernMain()

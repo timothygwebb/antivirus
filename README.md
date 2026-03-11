@@ -18,10 +18,46 @@ The Antivirus Solution is a .NET Framework 2.0 application designed to scan and 
 
 ## Requirements
 - .NET Framework 2.0 or higher
-- Windows XP or later
+- **Windows XP or later** (or Windows ME with KernelEX - see below)
 - `curl` command-line tool (typically pre-installed on Windows 10+)
 - PowerShell (for ZIP extraction of portable ClamAV)
 - Internet connection (for first-time ClamAV download and virus definition updates)
+
+## Platform Support
+
+### ✅ Windows XP and Later
+Fully supported out-of-the-box.
+
+### ⚠️ Windows ME with KernelEX
+**Windows ME CAN run modern ClamAV with KernelEX installed:**
+
+1. **Install KernelEX**
+   - Download from: http://kernelex.sourceforge.net/
+   - Install the core package
+   - Reboot Windows ME
+
+2. **Configure ClamAV Executables with KernelEX**
+   - After downloading ClamAV (option 3), navigate to:
+     ```
+     antivirus.Legacy\bin\Debug\net20\ClamAV\
+     ```
+   - Right-click `freshclam.exe` → Properties → Compatibility
+   - Set KernelEX mode to **"Windows 2000"** or **"Windows XP"**
+   - Apply
+   - Repeat for `clamscan.exe`
+
+3. **Run the Antivirus Tool**
+   - ClamAV executables will now run using Windows XP API compatibility
+   - Full scanning and definition updates supported
+
+### ❌ Windows ME Without KernelEX
+Not supported - modern ClamAV requires Windows XP APIs that are not available on stock Windows ME.
+
+**Why KernelEX is needed:**
+- Modern ClamAV 1.5.1 is compiled for Windows NT 5.1+ (XP)
+- Windows ME is based on Windows 9x kernel (not NT)
+- KernelEX provides the missing NT APIs (kernel32, advapi32, etc.)
+- Without KernelEX, clamscan.exe will fail with "not a valid Win32 application"
 
 ## Project Structure
 
