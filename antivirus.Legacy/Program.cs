@@ -262,17 +262,38 @@ namespace antivirus.Legacy
             if (File.Exists(bundledCurl))
             {
                 Console.WriteLine("Using bundled curl.exe");
+
+                // Auto-configure KernelEX for curl.exe on Windows ME
+                if (IsLegacyWindows())
+                {
+                    ConfigureKernelEXForExecutable(bundledCurl);
+                }
+
                 return bundledCurl;
             }
 
             // Priority 2: Check application directory
             string localCurl = Path.Combine(Directory.GetCurrentDirectory(), "curl.exe");
             if (File.Exists(localCurl))
+            {
+                // Auto-configure KernelEX if on Windows ME
+                if (IsLegacyWindows())
+                {
+                    ConfigureKernelEXForExecutable(localCurl);
+                }
                 return localCurl;
+            }
 
-            // Priority 3: Check system PATH
+            // Priority 3: Check system PATH (may not work on Windows ME without KernelEX)
             if (IsExecutableAvailable("curl"))
+            {
+                // Note: System curl on Windows 10+ is 64-bit and won't work on Windows ME
+                if (IsLegacyWindows())
+                {
+                    Console.WriteLine("Warning: System curl may not work on Windows ME");
+                }
                 return "curl";
+            }
 
             // Not found
             return null;
