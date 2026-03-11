@@ -27,8 +27,27 @@ namespace antivirus.Legacy
                 string rootPath = "C:\\";
                 Logger.LogInfo("Starting full system scan from root: " + rootPath, new object[0]);
                 Console.WriteLine("Scanning entire system from root: " + rootPath);
-                var _ = Scanner.Scan(rootPath);
+                var scanResult = Scanner.Scan(rootPath);
                 Logger.LogInfo("Program finished", new object[0]);
+
+                // Display detailed scan results
+                Console.WriteLine("\n========== SCAN RESULTS ==========");
+                Console.WriteLine($"Status: {(scanResult.Success ? "COMPLETED" : "FAILED")}");
+                Console.WriteLine($"Directories Scanned: {scanResult.DirectoriesScanned:N0}");
+                Console.WriteLine($"Files Scanned: {scanResult.FilesScanned:N0}");
+                Console.WriteLine($"Infections Found: {scanResult.InfectionsFound}");
+                Console.WriteLine($"Files Quarantined: {scanResult.FilesQuarantined}");
+                if (scanResult.InfectionsFound == 0)
+                {
+                    Console.WriteLine("\n✓ No threats detected - Your system is clean!");
+                }
+                else
+                {
+                    Console.WriteLine($"\n⚠ WARNING: {scanResult.InfectionsFound} threat(s) detected!");
+                    Console.WriteLine($"   {scanResult.FilesQuarantined} file(s) quarantined");
+                }
+                Console.WriteLine("==================================\n");
+
                 Console.WriteLine("Scan complete. Press Enter to exit...");
                 Console.ReadLine();
                 return;
@@ -51,8 +70,27 @@ namespace antivirus.Legacy
                         string rootPath = "C:\\";
                         Logger.LogInfo("Starting full system scan from root: " + rootPath, new object[0]);
                         Console.WriteLine("Scanning entire system from root: " + rootPath);
-                        var _ = Scanner.Scan(rootPath);
+                        var scanResult = Scanner.Scan(rootPath);
                         Logger.LogInfo("Program finished", new object[0]);
+
+                        // Display detailed scan results
+                        Console.WriteLine("\n========== SCAN RESULTS ==========");
+                        Console.WriteLine($"Status: {(scanResult.Success ? "COMPLETED" : "FAILED")}");
+                        Console.WriteLine($"Directories Scanned: {scanResult.DirectoriesScanned:N0}");
+                        Console.WriteLine($"Files Scanned: {scanResult.FilesScanned:N0}");
+                        Console.WriteLine($"Infections Found: {scanResult.InfectionsFound}");
+                        Console.WriteLine($"Files Quarantined: {scanResult.FilesQuarantined}");
+                        if (scanResult.InfectionsFound == 0)
+                        {
+                            Console.WriteLine("\n✓ No threats detected - Your system is clean!");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"\n⚠ WARNING: {scanResult.InfectionsFound} threat(s) detected!");
+                            Console.WriteLine($"   {scanResult.FilesQuarantined} file(s) quarantined");
+                        }
+                        Console.WriteLine("==================================\n");
+
                         Console.WriteLine("Scan complete. Press Enter to return to menu...");
                         Console.ReadLine();
                     }
@@ -354,22 +392,32 @@ namespace antivirus.Legacy
 
         private static string FindFreshclamExecutable()
         {
-            if (IsExecutableAvailable("freshclam"))
-                return "freshclam";
+            // ONLY use local portable installation to avoid permission issues with system ClamAV
+            // First priority: Check local ClamAV directory (self-contained portable installation)
+            string localClamAVDir = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
+            string freshclamInLocal = Path.Combine(localClamAVDir, "freshclam.exe");
+            if (File.Exists(freshclamInLocal))
+                return freshclamInLocal;
 
-            string programFilesX86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? string.Empty;
-            string[] commonPaths = new string[]
-            {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClamAV\\freshclam.exe"),
-                !string.IsNullOrEmpty(programFilesX86) ? Path.Combine(programFilesX86, "ClamAV\\freshclam.exe") : string.Empty,
-                Path.Combine(Directory.GetCurrentDirectory(), "freshclam.exe"),
-                Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers\\freshclam.exe")
-            };
-            foreach (string path in commonPaths)
-            {
-                if (!string.IsNullOrEmpty(path) && File.Exists(path))
-                    return path;
-            }
+            string freshclamInLocalBin = Path.Combine(localClamAVDir, "bin\\freshclam.exe");
+            if (File.Exists(freshclamInLocalBin))
+                return freshclamInLocalBin;
+
+            // Check application directory and subdirectories
+            string freshclamInCurrentDir = Path.Combine(Directory.GetCurrentDirectory(), "freshclam.exe");
+            if (File.Exists(freshclamInCurrentDir))
+                return freshclamInCurrentDir;
+
+            string freshclamInBin = Path.Combine(Directory.GetCurrentDirectory(), "bin\\freshclam.exe");
+            if (File.Exists(freshclamInBin))
+                return freshclamInBin;
+
+            string freshclamInInstallers = Path.Combine(Directory.GetCurrentDirectory(), "BrowserInstallers\\freshclam.exe");
+            if (File.Exists(freshclamInInstallers))
+                return freshclamInInstallers;
+
+            // DO NOT use system-installed ClamAV - causes permission issues
+            // Return null to trigger automatic download of portable version
             return null;
         }
 
@@ -380,20 +428,157 @@ namespace antivirus.Legacy
                 string freshclamPath = FindFreshclamExecutable();
                 if (string.IsNullOrEmpty(freshclamPath))
                 {
-                    Console.WriteLine("freshclam.exe not found. Virus definition databases may not be up to date.");
+                    Console.WriteLine("freshclam.exe not found. Attempting to download ClamAV automatically...");
+                    Logger.LogInfo("freshclam.exe not found. Attempting auto-download.", new object[0]);
+
+                    // Attempt to download and extract ClamAV ZIP (portable, no admin required)
+                    try
+                    {
+                        string clamavDir = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
+                        if (!Directory.Exists(clamavDir))
+                            Directory.CreateDirectory(clamavDir);
+
+                        string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
+                        string clamavZipUrl = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
+
+                        Console.WriteLine("Downloading ClamAV portable package...");
+                        DownloadWithCurl(clamavZipUrl, tempZip);
+
+                        if (File.Exists(tempZip))
+                        {
+                            Console.WriteLine("Extracting ClamAV...");
+                            ExtractZipFile(tempZip, clamavDir);
+
+                            // Move files from subdirectory BEFORE configuring (which creates database dir)
+                            string[] dirs = Directory.GetDirectories(clamavDir);
+                            if (dirs.Length > 0)
+                            {
+                                // Find the ClamAV subdirectory (usually has a version in the name)
+                                string subDir = null;
+                                foreach (string dir in dirs)
+                                {
+                                    string dirName = Path.GetFileName(dir);
+                                    if (dirName.StartsWith("clamav", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        subDir = dir;
+                                        break;
+                                    }
+                                }
+
+                                // If we found a ClamAV subdirectory, move its contents up one level
+                                if (!string.IsNullOrEmpty(subDir))
+                                {
+                                    Console.WriteLine($"Moving files from subdirectory: {Path.GetFileName(subDir)}");
+                                    foreach (string file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
+                                    {
+                                        string relPath = file.Substring(subDir.Length + 1);
+                                        string destPath = Path.Combine(clamavDir, relPath);
+                                        string destDir = Path.GetDirectoryName(destPath);
+                                        if (!Directory.Exists(destDir))
+                                            Directory.CreateDirectory(destDir);
+                                        if (File.Exists(destPath))
+                                            File.Delete(destPath);
+                                        File.Move(file, destPath);
+                                    }
+                                    Directory.Delete(subDir, true);
+                                    Console.WriteLine("File reorganization completed.");
+                                }
+                            }
+
+                            Console.WriteLine("ClamAV downloaded and extracted successfully.");
+                            Logger.LogInfo("ClamAV package downloaded and extracted.", new object[0]);
+
+                            // Configure ClamAV for the extracted location (AFTER moving files)
+                            ConfigureClamAVForDirectory(clamavDir);
+
+                            // Try to find freshclam again after extraction
+                            freshclamPath = FindFreshclamExecutable();
+                        }
+                    }
+                    catch (Exception downloadEx)
+                    {
+                        Console.WriteLine("Failed to auto-download ClamAV: " + downloadEx.Message);
+                        Logger.LogError("Failed to auto-download ClamAV", downloadEx, new object[0]);
+                    }
+
+                    if (string.IsNullOrEmpty(freshclamPath))
+                    {
+                        Console.WriteLine("Unable to locate or install freshclam.exe. Virus definitions cannot be updated.");
+                        Logger.LogWarning("freshclam.exe not found after installation attempt.", new object[0]);
+                        return;
+                    }
+                }
+
+                // ALWAYS use local configuration directory for self-contained operation
+                // This ensures we have write permissions and don't interfere with system ClamAV
+                string localClamAVDir = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
+                string localDbDir = Path.Combine(localClamAVDir, "database");
+
+                // Create local config directory if it doesn't exist
+                if (!Directory.Exists(localClamAVDir))
+                    Directory.CreateDirectory(localClamAVDir);
+                if (!Directory.Exists(localDbDir))
+                {
+                    Directory.CreateDirectory(localDbDir);
+                    Console.WriteLine($"Created local database directory: {localDbDir}");
+                    // Give filesystem time to sync
+                    System.Threading.Thread.Sleep(500);
+                }
+
+                // Verify directory is accessible
+                if (!Directory.Exists(localDbDir))
+                {
+                    Console.WriteLine("ERROR: Database directory could not be created or accessed.");
+                    Logger.LogError("Database directory creation failed", new object[0]);
                     return;
                 }
 
-                // Use the same conf directory that ConfigureClamAV() writes to
-                string confDir = FindClamAVInstallDirectory() ?? Directory.GetCurrentDirectory();
-                string freshclamConf = Path.Combine(confDir, "freshclam.conf");
+                // Test write permissions by creating a test file
+                try
+                {
+                    string testFile = Path.Combine(localDbDir, "test.tmp");
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                }
+                catch (Exception permEx)
+                {
+                    Console.WriteLine($"ERROR: No write permissions to database directory: {permEx.Message}");
+                    Logger.LogError("Database directory not writable", new object[0]);
+                    return;
+                }
 
+                // Write local config file with proper permissions
+                string localFreshclamConf = Path.Combine(localClamAVDir, "freshclam.conf");
+                try
+                {
+                    File.WriteAllText(localFreshclamConf,
+                        "# ClamAV freshclam configuration\n" +
+                        $"DatabaseDirectory {localDbDir.Replace("\\", "/")}\n" +
+                        "DatabaseMirror database.clamav.net\n" +
+                        "MaxAttempts 3\n" +
+                        "ScriptedUpdates no\n" +
+                        "LogVerbose yes\n");
+                    Console.WriteLine($"Created freshclam config at: {localFreshclamConf}");
+                }
+                catch (Exception confEx)
+                {
+                    Console.WriteLine($"Warning: Could not write config file: {confEx.Message}");
+                }
+
+                Console.WriteLine($"Using freshclam at: {freshclamPath}");
+                Console.WriteLine($"Database directory: {localDbDir}");
                 Console.WriteLine("Downloading ClamAV virus definitions with freshclam...");
+
+                // Use --config-file to explicitly override default config location
+                // This prevents freshclam from trying to read system config files
+                string args = $"--config-file=\"{localFreshclamConf}\"";
+                Console.WriteLine($"freshclam arguments: {args}");
+
                 ProcessStartInfo processInfo = new ProcessStartInfo
                 {
                     FileName = freshclamPath,
-                    Arguments = File.Exists(freshclamConf) ? $"--config-file=\"{freshclamConf}\"" : string.Empty,
-                    WorkingDirectory = confDir,
+                    Arguments = args,
+                    WorkingDirectory = localClamAVDir,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -412,21 +597,166 @@ namespace antivirus.Legacy
                         Console.WriteLine($"freshclam messages: {error}");
 
                     if (process.ExitCode == 0)
+                    {
                         Console.WriteLine("ClamAV virus definitions downloaded successfully.");
+                    }
                     else
                     {
-                        Console.WriteLine($"freshclam failed with exit code {process.ExitCode}. Check the output above.");
-                        throw new InvalidOperationException($"freshclam failed with exit code {process.ExitCode}.");
+                        Console.WriteLine($"freshclam failed with exit code {process.ExitCode}.");
+                        Console.WriteLine("This may be due to:");
+                        Console.WriteLine("  - Network connectivity issues");
+                        Console.WriteLine("  - Database directory permissions");
+                        Console.WriteLine("  - ClamAV mirror server unavailable");
+                        Console.WriteLine("The application will continue, but virus definitions may be outdated.");
+                        Logger.LogWarning($"freshclam failed with exit code {process.ExitCode}", new object[0]);
                     }
                 }
-            }
-            catch (InvalidOperationException)
-            {
-                throw;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to run freshclam: {ex.Message}");
+                Console.WriteLine("The application will continue, but virus definitions may not be updated.");
+                Logger.LogWarning($"Failed to run freshclam: {ex.Message}", new object[0]);
+            }
+        }
+
+        private static void ExtractZipFile(string zipFilePath, string outputDirectory)
+        {
+            try
+            {
+                if (!Directory.Exists(outputDirectory))
+                    Directory.CreateDirectory(outputDirectory);
+
+                Console.WriteLine("Extracting files, please wait...");
+
+                // Try PowerShell Expand-Archive first (more reliable for large files)
+                try
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo
+                    {
+                        FileName = "powershell.exe",
+                        Arguments = $"-NoProfile -Command \"Expand-Archive -Path '{zipFilePath}' -DestinationPath '{outputDirectory}' -Force\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using (Process process = Process.Start(psi))
+                    {
+                        string output = process.StandardOutput.ReadToEnd();
+                        string error = process.StandardError.ReadToEnd();
+                        process.WaitForExit();
+
+                        if (process.ExitCode == 0)
+                        {
+                            Console.WriteLine("ZIP extraction completed successfully.");
+                            return;
+                        }
+                        else
+                        {
+                            Console.WriteLine($"PowerShell extraction warning: {error}");
+                            // Fall through to COM method
+                        }
+                    }
+                }
+                catch (Exception psEx)
+                {
+                    Console.WriteLine($"PowerShell extraction not available: {psEx.Message}");
+                    Console.WriteLine("Trying alternative extraction method...");
+                }
+
+                // Fallback: Use Shell.Application COM object (for older systems)
+                Type shellType = Type.GetTypeFromProgID("Shell.Application");
+                if (shellType == null)
+                    throw new ApplicationException("No ZIP extraction method available.");
+
+                object shell = Activator.CreateInstance(shellType);
+                object zipFolder = shellType.InvokeMember("NameSpace", 
+                    System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { zipFilePath });
+                object destFolder = shellType.InvokeMember("NameSpace", 
+                    System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { outputDirectory });
+
+                if (zipFolder == null)
+                    throw new ApplicationException("Unable to open ZIP file.");
+                if (destFolder == null)
+                    throw new ApplicationException("Unable to access output directory.");
+
+                object items = zipFolder.GetType().InvokeMember("Items",
+                    System.Reflection.BindingFlags.GetProperty, null, zipFolder, null);
+
+                int itemCount = (int)items.GetType().InvokeMember("Count",
+                    System.Reflection.BindingFlags.GetProperty, null, items, null);
+
+                Console.WriteLine($"Extracting {itemCount} items...");
+
+                // CopyHere with options: 16 = respond "Yes to All", 4 = do not display progress dialog
+                destFolder.GetType().InvokeMember("CopyHere",
+                    System.Reflection.BindingFlags.InvokeMethod, null, destFolder, new object[] { items, 20 });
+
+                // Wait for extraction to complete
+                int waitCount = 0;
+                while (waitCount < 120) // Wait up to 2 minutes for large files
+                {
+                    System.Threading.Thread.Sleep(2000);
+                    waitCount++;
+
+                    int currentFiles = Directory.GetFiles(outputDirectory, "*", SearchOption.AllDirectories).Length;
+                    if (currentFiles >= itemCount)
+                    {
+                        System.Threading.Thread.Sleep(2000);
+                        break;
+                    }
+
+                    if (waitCount % 5 == 0)
+                        Console.WriteLine($"Extracting... {currentFiles} of {itemCount} files");
+                }
+
+                Console.WriteLine("ZIP extraction completed.");
+            }
+            catch (Exception ex)
+            {
+                throw new ApplicationException("Failed to extract ZIP file: " + ex.Message, ex);
+            }
+        }
+
+        private static void ConfigureClamAVForDirectory(string clamavDir)
+        {
+            try
+            {
+                Console.WriteLine("Configuring ClamAV...");
+                string dbDir = Path.Combine(clamavDir, "database");
+                if (!Directory.Exists(dbDir))
+                {
+                    Directory.CreateDirectory(dbDir);
+                    Console.WriteLine($"Created database directory: {dbDir}");
+                }
+
+                // Write clamd.conf
+                string configPath = Path.Combine(clamavDir, "clamd.conf");
+                File.WriteAllText(configPath,
+                    "# ClamAV daemon configuration\n" +
+                    $"DatabaseDirectory {dbDir.Replace("\\", "/")}\n" +
+                    "TCPSocket 3310\n" +
+                    "TCPAddr 127.0.0.1\n" +
+                    "ScanPE true\n");
+
+                // Write freshclam.conf
+                string freshclamConfPath = Path.Combine(clamavDir, "freshclam.conf");
+                File.WriteAllText(freshclamConfPath,
+                    "# ClamAV freshclam configuration\n" +
+                    $"DatabaseDirectory {dbDir.Replace("\\", "/")}\n" +
+                    "DatabaseMirror database.clamav.net\n" +
+                    "MaxAttempts 3\n" +
+                    "LogVerbose yes\n");
+
+                Console.WriteLine($"ClamAV configured successfully.");
+                Console.WriteLine($"  Configuration: {clamavDir}");
+                Console.WriteLine($"  Database directory: {dbDir}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to configure ClamAV: {ex.Message}");
             }
         }
         private static void ConfigureClamAV()
@@ -469,13 +799,17 @@ namespace antivirus.Legacy
 
         private static string FindClamAVInstallDirectory()
         {
+            // First priority: Check local portable installation
+            string localClamAVDir = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
+            if (Directory.Exists(localClamAVDir))
+                return localClamAVDir;
+
             string programFilesX86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? string.Empty;
             string[] commonDirs = new string[]
             {
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClamAV"),
                 !string.IsNullOrEmpty(programFilesX86) ? Path.Combine(programFilesX86, "ClamAV") : string.Empty,
-                @"C:\ClamAV",
-                Path.Combine(Directory.GetCurrentDirectory(), "ClamAV")
+                @"C:\ClamAV"
             };
             foreach (string dir in commonDirs)
             {

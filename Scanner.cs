@@ -144,48 +144,215 @@ namespace antivirus
         /// /// </summary>
         private static void UpdateClamAVDatabase()
         {
-            string freshclamExe = Path.Combine(ClamAVDir, "freshclam.exe");
-            if (File.Exists(freshclamExe))
+            string freshclamExe = FindFreshclamExecutableForScanner();
+            if (string.IsNullOrEmpty(freshclamExe))
             {
+                Console.WriteLine("freshclam.exe not found. Attempting to download ClamAV automatically...");
+                Logger.LogWarning("freshclam.exe not found. Attempting auto-download.", new object[0]);
+
+                // Attempt to download and extract ClamAV automatically
                 try
                 {
-                    var startInfo = new ProcessStartInfo
+                    if (!Directory.Exists(ClamAVDir))
+                        Directory.CreateDirectory(ClamAVDir);
+
+                    string tempZip = Path.Combine(Path.GetTempPath(), "clamav.zip");
+                    Console.WriteLine("Downloading ClamAV package...");
+                    DownloadFile(ClamAVZipUrl, tempZip);
+                    Console.WriteLine("Extracting ClamAV...");
+                    ZipExtractor.ExtractZip(tempZip, ClamAVDir);
+
+                    var dirs = Directory.GetDirectories(ClamAVDir);
+                    if (dirs.Length == 1)
                     {
-                        FileName = freshclamExe,
-                        WorkingDirectory = ClamAVDir,
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    };
-                    using (var process = Process.Start(startInfo))
-                    {
-                        if (process != null)
+                        string subDir = dirs[0];
+                        foreach (var file in Directory.GetFiles(subDir, "*", SearchOption.AllDirectories))
                         {
-                            string output = process.StandardOutput.ReadToEnd();
-                            string error = process.StandardError.ReadToEnd();
-                            process.WaitForExit();
-                            Logger.LogInfo($"freshclam output: {output}", new object[0]);
-                            // If freshclam succeeded, notify the definitions manager
-                            if (process.ExitCode == 0)
-                            {
-                                try { ClamAVDefinitionsManager.NotifyUpdated(); } catch { }
-                            }
-                            else
-                            {
-                                Logger.LogWarning($"freshclam error: {error}", new object[0]);
-                            }
+                            string relPath = GetRelativePath(subDir, file);
+                            string destPath = Path.Combine(ClamAVDir, relPath);
+                            Directory.CreateDirectory(Path.GetDirectoryName(destPath));
+                            MoveFile(file, destPath);
                         }
+                        foreach (var dir in Directory.GetDirectories(subDir, "*", SearchOption.AllDirectories))
+                        {
+                            string relPath = GetRelativePath(subDir, dir);
+                            string destPath = Path.Combine(ClamAVDir, relPath);
+                            Directory.CreateDirectory(destPath);
+                        }
+                        Directory.Delete(subDir, true);
                     }
+                    Console.WriteLine("ClamAV downloaded and extracted successfully.");
+                    Logger.LogInfo("ClamAV package downloaded and extracted.", new object[0]);
+
+                    // Try to find freshclam again after extraction
+                    freshclamExe = FindFreshclamExecutableForScanner();
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning($"Failed to run freshclam: {ex.Message}", new object[0]);
+                    Logger.LogError("Failed to download ClamAV: " + ex.Message, new object[0]);
+                    Console.WriteLine("Failed to download ClamAV automatically: " + ex.Message);
+                }
+
+                if (string.IsNullOrEmpty(freshclamExe))
+                {
+                    Logger.LogWarning("freshclam.exe not found after download attempt. ClamAV definitions will not be updated automatically.", new object[0]);
+                    Console.WriteLine("Unable to locate freshclam.exe. Virus definitions will not be updated.");
+                    return;
                 }
             }
-            else
+
+            try
             {
-                Logger.LogWarning("freshclam.exe not found. ClamAV definitions will not be updated automatically.", new object[0]);
+                // Determine working directory and config file
+                string workingDir = Path.GetDirectoryName(freshclamExe);
+                if (string.IsNullOrEmpty(workingDir))
+                    workingDir = ClamAVDir;
+
+                string freshclamConf = Path.Combine(workingDir, "freshclam.conf");
+                if (!File.Exists(freshclamConf))
+                    freshclamConf = Path.Combine(ClamAVDir, "freshclam.conf");
+
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = freshclamExe,
+                    Arguments = File.Exists(freshclamConf) ? $"--config-file=\"{freshclamConf}\"" : string.Empty,
+                    WorkingDirectory = workingDir,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                Console.WriteLine("Downloading ClamAV virus definitions with freshclam...");
+                using (var process = Process.Start(startInfo))
+                {
+                    if (process != null)
+                    {
+                        string output = process.StandardOutput.ReadToEnd();
+                        string error = process.StandardError.ReadToEnd();
+                        process.WaitForExit();
+
+                        if (!string.IsNullOrEmpty(output))
+                        {
+                            Console.WriteLine("freshclam output: " + output);
+                            Logger.LogInfo($"freshclam output: {output}", new object[0]);
+                        }
+                        if (!string.IsNullOrEmpty(error))
+                        {
+                            Console.WriteLine("freshclam messages: " + error);
+                        }
+
+                        // If freshclam succeeded, notify the definitions manager
+                        if (process.ExitCode == 0)
+                        {
+                            Console.WriteLine("ClamAV virus definitions downloaded successfully.");
+                            try { ClamAVDefinitionsManager.NotifyUpdated(); } catch { }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"freshclam failed with exit code {process.ExitCode}. Check the output above.");
+                            Logger.LogWarning($"freshclam error: {error}", new object[0]);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Failed to run freshclam: " + ex.Message);
+                Logger.LogWarning($"Failed to run freshclam: {ex.Message}", new object[0]);
+            }
+        }
+
+        private static string FindFreshclamExecutableForScanner()
+        {
+            // First priority: Check the ClamAV directory where we auto-download and manage ClamAV
+            string freshclamInClamAVDir = Path.Combine(ClamAVDir, "freshclam.exe");
+            if (File.Exists(freshclamInClamAVDir))
+                return freshclamInClamAVDir;
+
+            // Also check common bin subdirectory in our managed location
+            string freshclamInBin = Path.Combine(ClamAVDir, "bin\\freshclam.exe");
+            if (File.Exists(freshclamInBin))
+                return freshclamInBin;
+
+            // Check if it's in PATH
+            if (IsExecutableAvailableForScanner("freshclam"))
+                return "freshclam";
+
+            // Fallback: check other common installation paths
+            string programFilesX86 = Environment.GetEnvironmentVariable("ProgramFiles(x86)") ?? string.Empty;
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+            string[] commonPaths = new string[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClamAV\\freshclam.exe"),
+                !string.IsNullOrEmpty(programFilesX86) ? Path.Combine(programFilesX86, "ClamAV\\freshclam.exe") : string.Empty,
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClamAV\\bin\\freshclam.exe"),
+                !string.IsNullOrEmpty(programFilesX86) ? Path.Combine(programFilesX86, "ClamAV\\bin\\freshclam.exe") : string.Empty,
+                Path.Combine(appData, "ClamAV\\freshclam.exe"),
+                Path.Combine(localAppData, "ClamAV\\bin\\freshclam.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "freshclam.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "ClamAV\\freshclam.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "bin\\freshclam.exe"),
+                "C:\\ClamAV\\freshclam.exe",
+                "C:\\Program Files\\ClamAV\\freshclam.exe"
+            };
+            foreach (string path in commonPaths)
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    return path;
+            }
+            return null;
+        }
+
+        private static bool IsExecutableAvailableForScanner(string executableName)
+        {
+            try
+            {
+                string pathVariable = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+                string[] paths = pathVariable.Split(Path.PathSeparator);
+
+                string[] allowedExtensions = { ".exe", ".com" };
+                string pathextValue = Environment.GetEnvironmentVariable("PATHEXT") ?? string.Join(";", allowedExtensions);
+                string[] allExtensions = pathextValue.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                string[] extensions = Array.FindAll(
+                    allExtensions,
+                    ext => Array.Exists(allowedExtensions, a => a.Equals(ext, StringComparison.OrdinalIgnoreCase)));
+                if (extensions.Length == 0)
+                    extensions = allowedExtensions;
+
+                bool hasExtension = !string.IsNullOrEmpty(Path.GetExtension(executableName));
+
+                foreach (string pathEntry in paths)
+                {
+                    if (string.IsNullOrEmpty(pathEntry))
+                        continue;
+
+                    string normalizedPath = pathEntry.Trim().Trim('"');
+                    normalizedPath = Environment.ExpandEnvironmentVariables(normalizedPath);
+
+                    string fullPath = Path.Combine(normalizedPath, executableName);
+                    if (File.Exists(fullPath))
+                        return true;
+
+                    if (!hasExtension)
+                    {
+                        foreach (string ext in extensions)
+                        {
+                            string fullPathWithExt = Path.Combine(normalizedPath, executableName + ext);
+                            if (File.Exists(fullPathWithExt))
+                                return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Error checking executable availability ({executableName}): {ex.Message}", new object[0]);
+                return false;
             }
         }
 
