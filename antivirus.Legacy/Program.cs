@@ -186,8 +186,123 @@ namespace antivirus.Legacy
             Console.ReadLine();
         }
 
+        private static bool DownloadWithWebClient(string url, string destinationPath)
+        {
+            try
+            {
+                Console.WriteLine($"Downloading: {url}");
+                Console.WriteLine("Please wait...");
+
+                // Attempt to enable stronger TLS protocols when the runtime supports them.
+                // TLS 1.2 = 3072, TLS 1.1 = 768 are defined starting with .NET 4.5;
+                // wrapping in try/catch makes this safe on older runtimes.
+                try
+                {
+                    System.Net.ServicePointManager.SecurityProtocol =
+                        (System.Net.SecurityProtocolType)3072 | // TLS 1.2
+                        (System.Net.SecurityProtocolType)768  | // TLS 1.1
+                        System.Net.SecurityProtocolType.Tls;   // TLS 1.0
+                }
+                catch
+                {
+                    // Older runtime: will use whatever TLS version it supports natively
+                }
+
+                using (System.Net.WebClient client = new System.Net.WebClient())
+                {
+                    // Use a generic User-Agent that identifies the application while remaining
+                    // compatible with servers that might reject unknown or empty user agents.
+                    client.Headers.Add("User-Agent", "antivirus-legacy/1.0 (Windows)");
+
+                    System.Threading.ManualResetEvent done = new System.Threading.ManualResetEvent(false);
+                    Exception downloadError = null;
+                    int lastPercent = -1;
+
+                    client.DownloadProgressChanged += (sender, e) =>
+                    {
+                        // Report every 10% to avoid flooding the console
+                        int roundedPercent = e.ProgressPercentage / 10 * 10;
+                        if (roundedPercent != lastPercent)
+                        {
+                            lastPercent = roundedPercent;
+                            long receivedKB = e.BytesReceived / 1024;
+                            if (e.TotalBytesToReceive > 0)
+                            {
+                                long totalKB = e.TotalBytesToReceive / 1024;
+                                Console.WriteLine($"  {e.ProgressPercentage}% ({receivedKB:N0} KB / {totalKB:N0} KB)");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"  Downloaded: {receivedKB:N0} KB");
+                            }
+                        }
+                    };
+
+                    client.DownloadFileCompleted += (sender, e) =>
+                    {
+                        if (e.Error != null)
+                            downloadError = e.Error;
+                        done.Set();
+                    };
+
+                    client.DownloadFileAsync(new Uri(url), destinationPath);
+                    done.WaitOne();
+
+                    if (downloadError != null)
+                        throw downloadError;
+                }
+
+                if (File.Exists(destinationPath) && new FileInfo(destinationPath).Length > 0)
+                {
+                    Console.WriteLine("Download completed successfully.");
+                    return true;
+                }
+
+                Console.WriteLine("Download appeared to complete but file is missing or empty.");
+                return false;
+            }
+            catch (System.Net.WebException webEx)
+            {
+                Console.WriteLine($"WebClient download failed: {webEx.Message}");
+                string msg = webEx.Message;
+                if (msg.IndexOf("SSL", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    msg.IndexOf("TLS", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    msg.IndexOf("security", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    msg.IndexOf("certificate", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Console.WriteLine("Note: The download server requires TLS 1.2 (HTTPS).");
+                    Console.WriteLine("Windows 9x does not natively support TLS 1.2. Options:");
+                    Console.WriteLine("  - Install a 32-bit curl 7.x (win32 static) from https://curl.se/windows/");
+                    Console.WriteLine("    and place curl.exe in .\\Tools\\ (relative to the application's working directory)");
+                    Console.WriteLine("  - Install KernelEX (http://kernelex.sourceforge.net/) for better compatibility");
+                    Console.WriteLine("  - Download the required files manually on a newer system");
+                }
+                try { if (File.Exists(destinationPath)) File.Delete(destinationPath); } catch { }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"WebClient download failed: {ex.Message}");
+                try { if (File.Exists(destinationPath)) File.Delete(destinationPath); } catch { }
+                return false;
+            }
+        }
+
         private static void DownloadWithCurl(string url, string destinationPath)
         {
+            // On Windows 9x, modern curl.exe requires at minimum Windows XP/Vista.
+            // Use the built-in WebClient (backed by WinINet/IE on Win9x) as the
+            // primary download method, and fall back to curl only if that fails.
+            if (IsLegacyWindows())
+            {
+                Console.WriteLine("Windows 9x detected - using built-in WebClient for download...");
+                Logger.LogInfo("Windows 9x: attempting WebClient download", new object[0]);
+                if (DownloadWithWebClient(url, destinationPath))
+                    return;
+                Console.WriteLine("WebClient download failed. Attempting curl as fallback...");
+                Logger.LogWarning("Windows 9x: WebClient download failed, falling back to curl", new object[0]);
+            }
+
             try
             {
                 // Check for bundled curl.exe first, then system curl
@@ -199,13 +314,26 @@ namespace antivirus.Legacy
                     Console.WriteLine("curl is required for downloading files with TLS/SSL support.");
                     Console.WriteLine();
                     Console.WriteLine("Options:");
-                    Console.WriteLine("  1. Run Download-Curl.ps1 to download bundled curl.exe");
-                    Console.WriteLine("  2. Install curl and add to system PATH");
-                    Console.WriteLine("  3. Manually download files and place in appropriate directories");
+                    if (IsLegacyWindows())
+                    {
+                        Console.WriteLine("  1. Download a 32-bit curl 7.x (win32 static) from https://curl.se/windows/");
+                        Console.WriteLine("     and place curl.exe in .\\Tools\\ (relative to the application's working directory)");
+                        Console.WriteLine("  2. Install KernelEX from http://kernelex.sourceforge.net/ for better compatibility");
+                        Console.WriteLine("  3. Manually download files and place in appropriate directories");
+                    }
+                    else
+                    {
+                        Console.WriteLine("  1. Run Download-Curl.ps1 to download bundled curl.exe");
+                        Console.WriteLine("  2. Install curl and add to system PATH");
+                        Console.WriteLine("  3. Manually download files and place in appropriate directories");
+                    }
                     Logger.LogError("curl not found - cannot download files", new object[0]);
                     return;
                 }
 
+                // --progress-bar makes curl emit a single-line progress bar to stderr.
+                // Since stderr is streamed asynchronously via ErrorDataReceived, each
+                // update is printed as a new line (no ANSI cursor tricks needed).
                 string arguments = $"--fail --progress-bar -L -o \"{destinationPath}\" \"{url}\"";
 
                 Console.WriteLine($"Using curl: {curlPath}");
@@ -1012,9 +1140,9 @@ namespace antivirus.Legacy
 
         private static bool IsLegacyWindows()
         {
-            // Implement a check for legacy Windows versions (e.g., Windows Me)
-            Version ver = Environment.OSVersion.Version;
-            return (ver.Major == 4 && ver.Minor == 90); // Windows Me
+            // Windows 9x family (Win95/Win98/WinME) reports PlatformID.Win32Windows.
+            // Windows NT/2000/XP and later report PlatformID.Win32NT.
+            return Environment.OSVersion.Platform == PlatformID.Win32Windows;
         }
 
         private static void ConfigureKernelEXForExecutable(string exePath)
