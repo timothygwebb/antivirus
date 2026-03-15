@@ -147,7 +147,7 @@ namespace antivirus.Legacy
                 // Step 1: Download and install ClamAV
                 string clamavInstallerPath = Path.Combine(installersDir, "clamav-1.0.9.win.win32.msi");
                 string clamavDownloadUrl = "https://github.com/Cisco-Talos/clamav/releases/download/clamav-1.0.9/clamav-1.0.9.win.win32.msi";
-                DownloadWithCurl(clamavDownloadUrl, clamavInstallerPath);
+                DownloadFile(clamavDownloadUrl, clamavInstallerPath);
                 bool installSuccess = false;
                 if (File.Exists(clamavInstallerPath))
                 {
@@ -186,8 +186,131 @@ namespace antivirus.Legacy
             Console.ReadLine();
         }
 
-        private static void DownloadWithCurl(string url, string destinationPath)
+        private static bool DownloadWithWebClient(string url, string destinationPath)
         {
+            try
+            {
+                Console.WriteLine($"Downloading: {url}");
+                Console.WriteLine("Please wait...");
+
+                // Attempt to enable stronger TLS protocols when the runtime supports them.
+                // TLS 1.2 = 3072, TLS 1.1 = 768 are defined starting with .NET 4.5;
+                // wrapping in try/catch makes this safe on older runtimes.
+                try
+                {
+                    System.Net.ServicePointManager.SecurityProtocol =
+                        (System.Net.SecurityProtocolType)3072 | // TLS 1.2
+                        (System.Net.SecurityProtocolType)768  | // TLS 1.1
+                        System.Net.SecurityProtocolType.Tls;   // TLS 1.0
+                }
+                catch
+                {
+                    // Older runtime: will use whatever TLS version it supports natively
+                }
+
+                using (System.Net.WebClient client = new System.Net.WebClient())
+                {
+                    // Use a generic User-Agent that identifies the application while remaining
+                    // compatible with servers that might reject unknown or empty user agents.
+                    client.Headers.Add("User-Agent", "antivirus-legacy/1.0 (Windows)");
+
+                    Exception downloadError = null;
+                    int lastPercent = -1;
+
+                    client.DownloadProgressChanged += (sender, e) =>
+                    {
+                        // Report every 10% to avoid flooding the console
+                        int roundedPercent = e.ProgressPercentage / 10 * 10;
+                        if (roundedPercent != lastPercent)
+                        {
+                            lastPercent = roundedPercent;
+                            long receivedKB = e.BytesReceived / 1024;
+                            if (e.TotalBytesToReceive > 0)
+                            {
+                                long totalKB = e.TotalBytesToReceive / 1024;
+                                Console.WriteLine($"  {e.ProgressPercentage}% ({receivedKB:N0} KB / {totalKB:N0} KB)");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"  Downloaded: {receivedKB:N0} KB");
+                            }
+                        }
+                    };
+
+                    using (System.Threading.ManualResetEvent done = new System.Threading.ManualResetEvent(false))
+                    {
+                        client.DownloadFileCompleted += (sender, e) =>
+                        {
+                            if (e.Error != null)
+                                downloadError = e.Error;
+                            done.Set();
+                        };
+
+                        client.DownloadFileAsync(new Uri(url), destinationPath);
+
+                        // Wait up to 10 minutes; cancel the download if it hangs
+                        if (!done.WaitOne(600000, false))
+                        {
+                            client.CancelAsync();
+                            throw new Exception("Download timed out after 10 minutes.");
+                        }
+                    }
+
+                    if (downloadError != null)
+                        throw downloadError;
+                }
+
+                if (File.Exists(destinationPath) && new FileInfo(destinationPath).Length > 0)
+                {
+                    Console.WriteLine("Download completed successfully.");
+                    return true;
+                }
+
+                Console.WriteLine("Download appeared to complete but file is missing or empty.");
+                return false;
+            }
+            catch (System.Net.WebException webEx)
+            {
+                Console.WriteLine($"WebClient download failed: {webEx.Message}");
+                string msg = webEx.Message;
+                if (msg.IndexOf("SSL", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    msg.IndexOf("TLS", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    msg.IndexOf("security", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    msg.IndexOf("certificate", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    Console.WriteLine("Note: The download server requires TLS 1.2 (HTTPS).");
+                    Console.WriteLine("Windows 9x does not natively support TLS 1.2. Options:");
+                    Console.WriteLine("  - Install a 32-bit curl 7.x (win32 static) from https://curl.se/windows/");
+                    Console.WriteLine("    and place curl.exe in .\\Tools\\ (relative to the application's working directory)");
+                    Console.WriteLine("  - Install KernelEX (http://kernelex.sourceforge.net/) for better compatibility");
+                    Console.WriteLine("  - Download the required files manually on a newer system");
+                }
+                try { if (File.Exists(destinationPath)) File.Delete(destinationPath); } catch { }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"WebClient download failed: {ex.Message}");
+                try { if (File.Exists(destinationPath)) File.Delete(destinationPath); } catch { }
+                return false;
+            }
+        }
+
+        private static void DownloadFile(string url, string destinationPath)
+        {
+            // On Windows 9x, modern curl.exe requires at minimum Windows XP/Vista.
+            // Use the built-in WebClient (backed by WinINet/IE on Win9x) as the
+            // primary download method, and fall back to curl only if that fails.
+            if (IsLegacyWindows())
+            {
+                Console.WriteLine("Windows 9x detected - using built-in WebClient for download...");
+                Logger.LogInfo("Windows 9x: attempting WebClient download", new object[0]);
+                if (DownloadWithWebClient(url, destinationPath))
+                    return;
+                Console.WriteLine("WebClient download failed. Attempting curl as fallback...");
+                Logger.LogWarning("Windows 9x: WebClient download failed, falling back to curl", new object[0]);
+            }
+
             try
             {
                 // Check for bundled curl.exe first, then system curl
@@ -199,14 +322,27 @@ namespace antivirus.Legacy
                     Console.WriteLine("curl is required for downloading files with TLS/SSL support.");
                     Console.WriteLine();
                     Console.WriteLine("Options:");
-                    Console.WriteLine("  1. Run Download-Curl.ps1 to download bundled curl.exe");
-                    Console.WriteLine("  2. Install curl and add to system PATH");
-                    Console.WriteLine("  3. Manually download files and place in appropriate directories");
+                    if (IsLegacyWindows())
+                    {
+                        Console.WriteLine("  1. Download a 32-bit curl 7.x (win32 static) from https://curl.se/windows/");
+                        Console.WriteLine("     and place curl.exe in .\\Tools\\ (relative to the application's working directory)");
+                        Console.WriteLine("  2. Install KernelEX from http://kernelex.sourceforge.net/ for better compatibility");
+                        Console.WriteLine("  3. Manually download files and place in appropriate directories");
+                    }
+                    else
+                    {
+                        Console.WriteLine("  1. Run Download-Curl.ps1 to download bundled curl.exe");
+                        Console.WriteLine("  2. Install curl and add to system PATH");
+                        Console.WriteLine("  3. Manually download files and place in appropriate directories");
+                    }
                     Logger.LogError("curl not found - cannot download files", new object[0]);
                     return;
                 }
 
-                string arguments = $"--fail -L -o \"{destinationPath}\" \"{url}\"";
+                // --progress-bar makes curl emit a single-line progress bar to stderr.
+                // Since stderr is streamed asynchronously via ErrorDataReceived, each
+                // update is printed as a new line (no ANSI cursor tricks needed).
+                string arguments = $"--fail --progress-bar -L -o \"{destinationPath}\" \"{url}\"";
 
                 Console.WriteLine($"Using curl: {curlPath}");
                 Console.WriteLine($"Downloading: {url}");
@@ -223,17 +359,52 @@ namespace antivirus.Legacy
 
                 using (Process process = Process.Start(processInfo))
                 {
-                    process.WaitForExit();
+                    string lastStderrLine = null;
 
-                    string standardOutput = process.StandardOutput.ReadToEnd();
-                    string errorOutput = process.StandardError.ReadToEnd();
+                    // Use ManualResetEvents to detect when each async stream is fully drained
+                    // (OutputDataReceived/ErrorDataReceived fire with e.Data == null at end-of-stream).
+                    // WaitForExit() alone does not guarantee async handlers have finished on all
+                    // .NET Framework versions; waiting for the null sentinel ensures we capture
+                    // the final stderr line before reading the exit code.
+                    using (System.Threading.ManualResetEvent stdoutClosed = new System.Threading.ManualResetEvent(false))
+                    using (System.Threading.ManualResetEvent stderrClosed = new System.Threading.ManualResetEvent(false))
+                    {
+                        // Stream stdout in real-time
+                        process.OutputDataReceived += (sender, e) =>
+                        {
+                            if (e.Data != null)
+                                Console.WriteLine(e.Data);
+                            else
+                                stdoutClosed.Set();
+                        };
 
-                    Console.WriteLine($"curl standard output: {standardOutput}");
-                    Console.WriteLine($"curl error output: {errorOutput}");
+                        // Stream stderr in real-time (curl writes progress and errors here)
+                        process.ErrorDataReceived += (sender, e) =>
+                        {
+                            if (e.Data != null)
+                            {
+                                Console.WriteLine(e.Data);
+                                lastStderrLine = e.Data;
+                            }
+                            else
+                            {
+                                stderrClosed.Set();
+                            }
+                        };
+
+                        process.BeginOutputReadLine();
+                        process.BeginErrorReadLine();
+                        process.WaitForExit();
+
+                        // Wait for async output handlers to finish draining their streams
+                        stdoutClosed.WaitOne();
+                        stderrClosed.WaitOne();
+                    }
 
                     if (process.ExitCode != 0)
                     {
-                        Console.WriteLine($"curl failed with error: {errorOutput}");
+                        string detail = lastStderrLine != null ? $": {lastStderrLine}" : string.Empty;
+                        Console.WriteLine($"curl failed with exit code {process.ExitCode}{detail}");
                         Console.WriteLine("Please download the file manually and place it in the appropriate directory.");
                     }
                     else
@@ -263,7 +434,7 @@ namespace antivirus.Legacy
             {
                 Console.WriteLine("Using bundled curl.exe");
 
-                // Auto-configure KernelEX for curl.exe on Windows ME
+                // Auto-configure KernelEX for curl.exe on Windows 9x
                 if (IsLegacyWindows())
                 {
                     ConfigureKernelEXForExecutable(bundledCurl);
@@ -276,7 +447,7 @@ namespace antivirus.Legacy
             string localCurl = Path.Combine(Directory.GetCurrentDirectory(), "curl.exe");
             if (File.Exists(localCurl))
             {
-                // Auto-configure KernelEX if on Windows ME
+                // Auto-configure KernelEX if on Windows 9x
                 if (IsLegacyWindows())
                 {
                     ConfigureKernelEXForExecutable(localCurl);
@@ -284,13 +455,13 @@ namespace antivirus.Legacy
                 return localCurl;
             }
 
-            // Priority 3: Check system PATH (may not work on Windows ME without KernelEX)
+            // Priority 3: Check system PATH (may not work on Windows 9x without KernelEX)
             if (IsExecutableAvailable("curl"))
             {
-                // Note: System curl on Windows 10+ is 64-bit and won't work on Windows ME
+                // Note: System curl on Windows 10+ is 64-bit and won't work on Windows 9x
                 if (IsLegacyWindows())
                 {
-                    Console.WriteLine("Warning: System curl may not work on Windows ME");
+                    Console.WriteLine("Warning: System curl may not work on Windows 9x");
                 }
                 return "curl";
             }
@@ -480,11 +651,11 @@ namespace antivirus.Legacy
         {
             try
             {
-                // Auto-configure KernelEX if on Windows ME
+                // Auto-configure KernelEX if on Windows 9x
                 if (IsLegacyWindows())
                 {
-                    Console.WriteLine("Windows ME detected - Auto-configuring KernelEX compatibility...");
-                    Logger.LogInfo("Windows ME detected - applying KernelEX settings", new object[0]);
+                    Console.WriteLine("Windows 9x detected - Auto-configuring KernelEX compatibility...");
+                    Logger.LogInfo("Windows 9x detected - applying KernelEX settings", new object[0]);
                 }
 
                 string freshclamPath = FindFreshclamExecutable();
@@ -504,7 +675,7 @@ namespace antivirus.Legacy
                         string clamavZipUrl = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
 
                         Console.WriteLine("Downloading ClamAV portable package...");
-                        DownloadWithCurl(clamavZipUrl, tempZip);
+                        DownloadFile(clamavZipUrl, tempZip);
 
                         if (File.Exists(tempZip))
                         {
@@ -636,7 +807,7 @@ namespace antivirus.Legacy
                 string args = $"--config-file=\"{localFreshclamConf}\"";
                 Console.WriteLine($"freshclam arguments: {args}");
 
-                // Auto-configure KernelEX if on Windows ME
+                // Auto-configure KernelEX if on Windows 9x
                 if (IsLegacyWindows() && File.Exists(freshclamPath))
                 {
                     ConfigureKernelEXForExecutable(freshclamPath);
@@ -698,7 +869,7 @@ namespace antivirus.Legacy
 
                 Console.WriteLine("Extracting files, please wait...");
 
-                // Skip PowerShell on Windows ME (not available on Windows 9x)
+                // Skip PowerShell on Windows 9x (PowerShell is not available)
                 bool useComExtraction = IsLegacyWindows();
 
                 if (!useComExtraction)
@@ -742,10 +913,10 @@ namespace antivirus.Legacy
                 }
                 else
                 {
-                    Console.WriteLine("Windows ME detected - using COM extraction method...");
+                    Console.WriteLine("Windows 9x detected - using COM extraction method...");
                 }
 
-                // Use Shell.Application COM object (for Windows ME and fallback)
+                // Use Shell.Application COM object (for Windows 9x and fallback)
                 Type shellType = Type.GetTypeFromProgID("Shell.Application") ?? 
                     throw new ApplicationException("No ZIP extraction method available.");
 
@@ -996,9 +1167,9 @@ namespace antivirus.Legacy
 
         private static bool IsLegacyWindows()
         {
-            // Implement a check for legacy Windows versions (e.g., Windows Me)
-            Version ver = Environment.OSVersion.Version;
-            return (ver.Major == 4 && ver.Minor == 90); // Windows Me
+            // Windows 9x family (Win95/Win98/WinME) reports PlatformID.Win32Windows.
+            // Windows NT/2000/XP and later report PlatformID.Win32NT.
+            return Environment.OSVersion.Platform == PlatformID.Win32Windows;
         }
 
         private static void ConfigureKernelEXForExecutable(string exePath)
@@ -1026,7 +1197,7 @@ namespace antivirus.Legacy
 
         private static Process StartProcessWithKernelEX(ProcessStartInfo processInfo)
         {
-            // If on Windows ME, auto-configure KernelEX before starting process
+            // If on Windows 9x, auto-configure KernelEX before starting process
             if (IsLegacyWindows() && File.Exists(processInfo.FileName))
             {
                 ConfigureKernelEXForExecutable(processInfo.FileName);
