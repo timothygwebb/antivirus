@@ -206,7 +206,7 @@ namespace antivirus.Legacy
                     return;
                 }
 
-                string arguments = $"--fail -L -o \"{destinationPath}\" \"{url}\"";
+                string arguments = $"--fail --progress-bar -L -o \"{destinationPath}\" \"{url}\"";
 
                 Console.WriteLine($"Using curl: {curlPath}");
                 Console.WriteLine($"Downloading: {url}");
@@ -223,17 +223,33 @@ namespace antivirus.Legacy
 
                 using (Process process = Process.Start(processInfo))
                 {
+                    string lastStderrLine = null;
+
+                    // Stream stdout in real-time
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null)
+                            Console.WriteLine(e.Data);
+                    };
+
+                    // Stream stderr in real-time (curl writes progress and errors here)
+                    process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null)
+                        {
+                            Console.WriteLine(e.Data);
+                            lastStderrLine = e.Data;
+                        }
+                    };
+
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
                     process.WaitForExit();
-
-                    string standardOutput = process.StandardOutput.ReadToEnd();
-                    string errorOutput = process.StandardError.ReadToEnd();
-
-                    Console.WriteLine($"curl standard output: {standardOutput}");
-                    Console.WriteLine($"curl error output: {errorOutput}");
 
                     if (process.ExitCode != 0)
                     {
-                        Console.WriteLine($"curl failed with error: {errorOutput}");
+                        string detail = lastStderrLine != null ? $": {lastStderrLine}" : string.Empty;
+                        Console.WriteLine($"curl failed with exit code {process.ExitCode}{detail}");
                         Console.WriteLine("Please download the file manually and place it in the appropriate directory.");
                     }
                     else
