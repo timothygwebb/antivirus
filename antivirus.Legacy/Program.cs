@@ -147,7 +147,7 @@ namespace antivirus.Legacy
                 // Step 1: Download and install ClamAV
                 string clamavInstallerPath = Path.Combine(installersDir, "clamav-1.0.9.win.win32.msi");
                 string clamavDownloadUrl = "https://github.com/Cisco-Talos/clamav/releases/download/clamav-1.0.9/clamav-1.0.9.win.win32.msi";
-                DownloadWithCurl(clamavDownloadUrl, clamavInstallerPath);
+                DownloadFile(clamavDownloadUrl, clamavInstallerPath);
                 bool installSuccess = false;
                 if (File.Exists(clamavInstallerPath))
                 {
@@ -214,7 +214,6 @@ namespace antivirus.Legacy
                     // compatible with servers that might reject unknown or empty user agents.
                     client.Headers.Add("User-Agent", "antivirus-legacy/1.0 (Windows)");
 
-                    System.Threading.ManualResetEvent done = new System.Threading.ManualResetEvent(false);
                     Exception downloadError = null;
                     int lastPercent = -1;
 
@@ -238,15 +237,24 @@ namespace antivirus.Legacy
                         }
                     };
 
-                    client.DownloadFileCompleted += (sender, e) =>
+                    using (System.Threading.ManualResetEvent done = new System.Threading.ManualResetEvent(false))
                     {
-                        if (e.Error != null)
-                            downloadError = e.Error;
-                        done.Set();
-                    };
+                        client.DownloadFileCompleted += (sender, e) =>
+                        {
+                            if (e.Error != null)
+                                downloadError = e.Error;
+                            done.Set();
+                        };
 
-                    client.DownloadFileAsync(new Uri(url), destinationPath);
-                    done.WaitOne();
+                        client.DownloadFileAsync(new Uri(url), destinationPath);
+
+                        // Wait up to 10 minutes; cancel the download if it hangs
+                        if (!done.WaitOne(600000, false))
+                        {
+                            client.CancelAsync();
+                            throw new Exception("Download timed out after 10 minutes.");
+                        }
+                    }
 
                     if (downloadError != null)
                         throw downloadError;
@@ -288,7 +296,7 @@ namespace antivirus.Legacy
             }
         }
 
-        private static void DownloadWithCurl(string url, string destinationPath)
+        private static void DownloadFile(string url, string destinationPath)
         {
             // On Windows 9x, modern curl.exe requires at minimum Windows XP/Vista.
             // Use the built-in WebClient (backed by WinINet/IE on Win9x) as the
@@ -353,26 +361,45 @@ namespace antivirus.Legacy
                 {
                     string lastStderrLine = null;
 
-                    // Stream stdout in real-time
-                    process.OutputDataReceived += (sender, e) =>
+                    // Use ManualResetEvents to detect when each async stream is fully drained
+                    // (OutputDataReceived/ErrorDataReceived fire with e.Data == null at end-of-stream).
+                    // WaitForExit() alone does not guarantee async handlers have finished on all
+                    // .NET Framework versions; waiting for the null sentinel ensures we capture
+                    // the final stderr line before reading the exit code.
+                    using (System.Threading.ManualResetEvent stdoutClosed = new System.Threading.ManualResetEvent(false))
+                    using (System.Threading.ManualResetEvent stderrClosed = new System.Threading.ManualResetEvent(false))
                     {
-                        if (e.Data != null)
-                            Console.WriteLine(e.Data);
-                    };
-
-                    // Stream stderr in real-time (curl writes progress and errors here)
-                    process.ErrorDataReceived += (sender, e) =>
-                    {
-                        if (e.Data != null)
+                        // Stream stdout in real-time
+                        process.OutputDataReceived += (sender, e) =>
                         {
-                            Console.WriteLine(e.Data);
-                            lastStderrLine = e.Data;
-                        }
-                    };
+                            if (e.Data != null)
+                                Console.WriteLine(e.Data);
+                            else
+                                stdoutClosed.Set();
+                        };
 
-                    process.BeginOutputReadLine();
-                    process.BeginErrorReadLine();
-                    process.WaitForExit();
+                        // Stream stderr in real-time (curl writes progress and errors here)
+                        process.ErrorDataReceived += (sender, e) =>
+                        {
+                            if (e.Data != null)
+                            {
+                                Console.WriteLine(e.Data);
+                                lastStderrLine = e.Data;
+                            }
+                            else
+                            {
+                                stderrClosed.Set();
+                            }
+                        };
+
+                        process.BeginOutputReadLine();
+                        process.BeginErrorReadLine();
+                        process.WaitForExit();
+
+                        // Wait for async output handlers to finish draining their streams
+                        stdoutClosed.WaitOne();
+                        stderrClosed.WaitOne();
+                    }
 
                     if (process.ExitCode != 0)
                     {
@@ -407,7 +434,7 @@ namespace antivirus.Legacy
             {
                 Console.WriteLine("Using bundled curl.exe");
 
-                // Auto-configure KernelEX for curl.exe on Windows ME
+                // Auto-configure KernelEX for curl.exe on Windows 9x
                 if (IsLegacyWindows())
                 {
                     ConfigureKernelEXForExecutable(bundledCurl);
@@ -420,7 +447,7 @@ namespace antivirus.Legacy
             string localCurl = Path.Combine(Directory.GetCurrentDirectory(), "curl.exe");
             if (File.Exists(localCurl))
             {
-                // Auto-configure KernelEX if on Windows ME
+                // Auto-configure KernelEX if on Windows 9x
                 if (IsLegacyWindows())
                 {
                     ConfigureKernelEXForExecutable(localCurl);
@@ -428,13 +455,13 @@ namespace antivirus.Legacy
                 return localCurl;
             }
 
-            // Priority 3: Check system PATH (may not work on Windows ME without KernelEX)
+            // Priority 3: Check system PATH (may not work on Windows 9x without KernelEX)
             if (IsExecutableAvailable("curl"))
             {
-                // Note: System curl on Windows 10+ is 64-bit and won't work on Windows ME
+                // Note: System curl on Windows 10+ is 64-bit and won't work on Windows 9x
                 if (IsLegacyWindows())
                 {
-                    Console.WriteLine("Warning: System curl may not work on Windows ME");
+                    Console.WriteLine("Warning: System curl may not work on Windows 9x");
                 }
                 return "curl";
             }
@@ -624,11 +651,11 @@ namespace antivirus.Legacy
         {
             try
             {
-                // Auto-configure KernelEX if on Windows ME
+                // Auto-configure KernelEX if on Windows 9x
                 if (IsLegacyWindows())
                 {
-                    Console.WriteLine("Windows ME detected - Auto-configuring KernelEX compatibility...");
-                    Logger.LogInfo("Windows ME detected - applying KernelEX settings", new object[0]);
+                    Console.WriteLine("Windows 9x detected - Auto-configuring KernelEX compatibility...");
+                    Logger.LogInfo("Windows 9x detected - applying KernelEX settings", new object[0]);
                 }
 
                 string freshclamPath = FindFreshclamExecutable();
@@ -648,7 +675,7 @@ namespace antivirus.Legacy
                         string clamavZipUrl = "https://www.clamav.net/downloads/production/clamav-1.5.1.win.x64.zip";
 
                         Console.WriteLine("Downloading ClamAV portable package...");
-                        DownloadWithCurl(clamavZipUrl, tempZip);
+                        DownloadFile(clamavZipUrl, tempZip);
 
                         if (File.Exists(tempZip))
                         {
@@ -780,7 +807,7 @@ namespace antivirus.Legacy
                 string args = $"--config-file=\"{localFreshclamConf}\"";
                 Console.WriteLine($"freshclam arguments: {args}");
 
-                // Auto-configure KernelEX if on Windows ME
+                // Auto-configure KernelEX if on Windows 9x
                 if (IsLegacyWindows() && File.Exists(freshclamPath))
                 {
                     ConfigureKernelEXForExecutable(freshclamPath);
@@ -842,7 +869,7 @@ namespace antivirus.Legacy
 
                 Console.WriteLine("Extracting files, please wait...");
 
-                // Skip PowerShell on Windows ME (not available on Windows 9x)
+                // Skip PowerShell on Windows 9x (PowerShell is not available)
                 bool useComExtraction = IsLegacyWindows();
 
                 if (!useComExtraction)
@@ -886,10 +913,10 @@ namespace antivirus.Legacy
                 }
                 else
                 {
-                    Console.WriteLine("Windows ME detected - using COM extraction method...");
+                    Console.WriteLine("Windows 9x detected - using COM extraction method...");
                 }
 
-                // Use Shell.Application COM object (for Windows ME and fallback)
+                // Use Shell.Application COM object (for Windows 9x and fallback)
                 Type shellType = Type.GetTypeFromProgID("Shell.Application") ?? 
                     throw new ApplicationException("No ZIP extraction method available.");
 
@@ -1170,7 +1197,7 @@ namespace antivirus.Legacy
 
         private static Process StartProcessWithKernelEX(ProcessStartInfo processInfo)
         {
-            // If on Windows ME, auto-configure KernelEX before starting process
+            // If on Windows 9x, auto-configure KernelEX before starting process
             if (IsLegacyWindows() && File.Exists(processInfo.FileName))
             {
                 ConfigureKernelEXForExecutable(processInfo.FileName);
