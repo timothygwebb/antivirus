@@ -1,16 +1,21 @@
 """
 core.config — Configuration constants for the antivirus agent layer.
 
-All paths are relative to the application working directory, consistent with
-the .NET project conventions.
+By default, all paths are resolved relative to the application working
+directory, consistent with the .NET project conventions. Set the
+ANTIVIRUS_LEGACY_BIN_DIR environment variable to override the base directory
+when the legacy executable is located elsewhere (e.g. a Release build or a
+non-standard output path).
 """
 
 import os
 
-# Base directory for the .NET executable (antivirus.Legacy output)
-LEGACY_BIN_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "antivirus.Legacy", "bin", "Debug", "net20",
+# Base directory for the .NET executable (antivirus.Legacy output).
+# Defaults to the current working directory so path resolution matches the
+# documented .NET project conventions, but may be overridden for custom
+# layouts or non-default build locations.
+LEGACY_BIN_DIR = os.path.abspath(
+    os.environ.get("ANTIVIRUS_LEGACY_BIN_DIR", os.getcwd())
 )
 
 # Antivirus executable name

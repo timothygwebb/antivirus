@@ -2,12 +2,6 @@
 tests/test_parser.py — unit tests for core.parser.
 """
 
-import sys
-import os
-
-# Ensure the project root is on the path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from core.parser import parse_scan_output, parse_update_output
 
 
@@ -75,5 +69,5 @@ class TestParseUpdateOutput:
 
     def test_empty_output(self):
         result = parse_update_output("")
-        assert result["status"] in ("updated", "already_current", "error")
+        assert result["status"] in ("unknown", "already_current", "error")
         assert "message" in result

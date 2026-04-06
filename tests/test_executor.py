@@ -2,11 +2,7 @@
 tests/test_executor.py — unit tests for core.executor.
 """
 
-import sys
-import os
 from unittest.mock import patch, MagicMock
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.executor import run_antivirus
 

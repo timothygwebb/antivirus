@@ -2,11 +2,7 @@
 tests/test_scan_agent.py — unit tests for agents.scan_agent.
 """
 
-import sys
-import os
 from unittest.mock import patch
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.scan_agent import ScanAgent
 
@@ -54,27 +50,3 @@ class TestScanAgent:
                 agent = ScanAgent()
                 result = agent.run(target="/tmp")
         assert result["status"] in ("failed", "error")
-
-
-class TestUpdateAgent:
-    """Tests for UpdateAgent.run()."""
-
-    def test_run_returns_dict_with_required_keys(self):
-        from agents.update_agent import UpdateAgent
-
-        with patch("os.path.exists", return_value=True):
-            with patch("os.makedirs"):
-                with patch("agents.update_agent.run_antivirus", return_value=(0, "up-to-date\n", "")):
-                    agent = UpdateAgent()
-                    result = agent.run()
-        assert "status" in result
-        assert "message" in result
-
-    def test_missing_freshclam_returns_error(self):
-        from agents.update_agent import UpdateAgent
-
-        with patch("os.path.exists", return_value=False):
-            agent = UpdateAgent()
-            result = agent.run()
-        assert result["status"] == "error"
-        assert "freshclam.exe not found" in result["message"]

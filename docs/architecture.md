@@ -16,7 +16,7 @@ antivirus/
 │   └── repair_agent.py     # Browser repair agent
 │
 ├── core/                   # Python business logic (shared across agents)
-│   ├── executor.py         # Subprocess executor for the .NET binary
+│   ├── executor.py         # Subprocess executor for ClamAV binaries
 │   ├── parser.py           # Output parsing utilities
 │   └── config.py           # Configuration constants
 │
@@ -40,11 +40,10 @@ agents/scan_agent.py         agents/update_agent.py    agents/repair_agent.py
                      ▼                                           ▼
               core/executor.py  ◄────────────────────── core/executor.py
                      │
-                     ▼
-         antivirus.Legacy.exe  (subprocess)
-                     │
-                     ▼
-              ClamAV / clamscan.exe
+          ┌──────────┴──────────┐
+          ▼                     ▼
+    clamscan.exe          freshclam.exe
+    (ClamAV scanner)      (definition updater)
 ```
 
 ## Key Design Decisions
@@ -58,7 +57,7 @@ The application bundles a portable ClamAV installation rather than relying on a 
 
 ### Python Agent Layer
 
-A thin Python layer wraps the .NET executable. This provides:
+A thin Python layer wraps ClamAV binaries (`clamscan.exe`, `freshclam.exe`) directly via `core.executor`. This provides:
 - A programmatic API suitable for AI agent frameworks.
 - Structured output (parsed from ClamAV text output).
 - Type-annotated interfaces for agent tool calling.

@@ -62,15 +62,33 @@ def parse_update_output(output: str) -> dict:
 
     Returns:
         A dict with keys:
-            status  (str) — "updated", "already_current", or "error"
+            status  (str) — "updated", "already_current", "unknown", or "error"
             message (str) — human-readable summary
     """
     try:
-        lower = output.lower()
+        text = output.strip()
+        lower = text.lower()
+
         if "up-to-date" in lower or "already up to date" in lower:
             return {"status": "already_current", "message": "Virus definitions are already up-to-date."}
+
         if "updated" in lower or "database updated" in lower:
             return {"status": "updated", "message": "Virus definitions updated successfully."}
-        return {"status": "updated", "message": output.strip() or "Update completed."}
+
+        error_indicators = (
+            "error",
+            "failed",
+            "can't",
+            "cannot",
+            "timeout",
+            "timed out",
+            "denied",
+            "no such file",
+            "not found",
+        )
+        if any(indicator in lower for indicator in error_indicators):
+            return {"status": "error", "message": text or "Update failed."}
+
+        return {"status": "unknown", "message": text or "Update status could not be determined."}
     except Exception as exc:
         return {"status": "error", "message": "Error parsing update output: {}".format(exc)}

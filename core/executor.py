@@ -6,7 +6,6 @@ to deal with process management directly.
 """
 
 import subprocess
-import sys
 from typing import List, Tuple
 
 

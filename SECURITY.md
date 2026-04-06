@@ -38,7 +38,7 @@ Instead, report it privately by emailing the maintainer or by using [GitHub's pr
 
 ### Python Agent Layer
 
-- The Python agent layer invokes the .NET antivirus executable as a subprocess. Ensure inputs to the agent are validated before being passed to the executable.
+- The Python agent layer invokes ClamAV binaries (`clamscan.exe` for scanning, `freshclam.exe` for definition updates) directly as subprocesses via `core.executor`. Ensure inputs to the agent (scan target paths, configuration values) are validated before being passed to these executables.
 - Do not pass untrusted user input directly as command-line arguments without sanitization.
 
 ## Dependency Security

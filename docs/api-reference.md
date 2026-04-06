@@ -4,7 +4,7 @@
 
 ### Class `ScanAgent`
 
-Orchestrates ClamAV virus scanning via the antivirus executable.
+Orchestrates ClamAV virus scanning by invoking `clamscan.exe` directly via `core.executor`.
 
 #### `ScanAgent.run(target: str) -> dict`
 
@@ -30,7 +30,7 @@ Downloads and updates ClamAV virus definitions.
 #### `UpdateAgent.run() -> dict`
 
 **Returns:** `dict` with keys:
-- `status` (`str`): `"updated"`, `"already_current"`, or `"error"`.
+- `status` (`str`): `"updated"`, `"already_current"`, `"unknown"`, or `"error"`.
 - `message` (`str`): Human-readable result message.
 
 ---
@@ -54,7 +54,7 @@ Detects installed browsers and reports their status.
 
 ### `run_antivirus(args: list, timeout: int = 3600) -> tuple`
 
-Low-level helper that invokes the antivirus executable as a subprocess.
+Low-level helper that invokes a ClamAV binary (`clamscan.exe`, `freshclam.exe`, etc.) as a subprocess.
 
 **Parameters:**
 - `args` (`list`): Command-line arguments to pass.

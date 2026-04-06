@@ -2,11 +2,7 @@
 tests/test_repair_agent.py — unit tests for agents.repair_agent.
 """
 
-import sys
-import os
 from unittest.mock import patch
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.repair_agent import RepairAgent
 
