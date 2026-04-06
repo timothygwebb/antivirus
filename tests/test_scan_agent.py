@@ -53,7 +53,7 @@ class TestScanAgent:
             with patch("agents.scan_agent.run_antivirus", return_value=(-1, "", "timed out")):
                 agent = ScanAgent()
                 result = agent.run(target="/tmp")
-        assert result["status"] in ("failed", "error", "completed")
+        assert result["status"] in ("failed", "error")
 
 
 class TestUpdateAgent:
