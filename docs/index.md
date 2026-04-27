@@ -6,9 +6,9 @@ This directory contains extended documentation for the Antivirus Solution projec
 
 | File | Description |
 |------|-------------|
-| [architecture.md](architecture.md) | System architecture and component overview |
-| [agent-integration.md](agent-integration.md) | Guide for integrating AI agents with the antivirus tool |
-| [api-reference.md](api-reference.md) | Python agent API reference |
+| [architecture.md](architecture.md) | System architecture, component overview, and data flow diagrams |
+| [agent-integration.md](agent-integration.md) | Guide for integrating AI agents with the antivirus tool (subprocess and REST transports) |
+| [api-reference.md](api-reference.md) | Python agent API reference (ScanAgent, SDKScanAgent, UpdateAgent, RepairAgent, core modules) |
 
 ## Quick Links
 
