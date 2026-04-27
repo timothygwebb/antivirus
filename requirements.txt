@@ -1,6 +1,9 @@
 # Python dependencies for the antivirus agent layer
 # Install with: pip install -r requirements.txt
 
+# ClamAV SDK — REST and gRPC integration (https://pypi.org/project/clamav-sdk/)
+clamav-sdk>=0.2.0
+
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0

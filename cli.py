@@ -26,6 +26,39 @@ def cmd_scan(args):
     return 0
 
 
+def cmd_sdk_scan(args):
+    """Scan a file using the clamav-sdk REST client."""
+    from agents.sdk_scan_agent import SDKScanAgent
+
+    agent = SDKScanAgent(url=args.url or None)
+
+    if args.mode == "bytes":
+        try:
+            with open(args.target, "rb") as fh:
+                data = fh.read()
+        except OSError as exc:
+            result = {"status": "error", "files_scanned": 0, "threats": [], "message": str(exc)}
+            print(json.dumps(result, indent=2))
+            return 1
+        result = agent.scan_bytes(data, filename=args.target)
+    elif args.mode == "stream":
+        try:
+            with open(args.target, "rb") as fh:
+                data = fh.read()
+        except OSError as exc:
+            result = {"status": "error", "files_scanned": 0, "threats": [], "message": str(exc)}
+            print(json.dumps(result, indent=2))
+            return 1
+        result = agent.scan_stream(data)
+    else:
+        result = agent.scan_file(args.target)
+
+    print(json.dumps(result, indent=2))
+    if result.get("threats") or result.get("status") not in ("completed", "infected"):
+        return 1 if result.get("status") == "error" else 0
+    return 0
+
+
 def cmd_update(args):
     """Update virus definitions."""
     from agents.update_agent import UpdateAgent
@@ -66,6 +99,28 @@ def build_parser():
         help="File system path to scan recursively (e.g. C:\\ or /home/user).",
     )
 
+    # sdk-scan sub-command
+    sdk_scan_parser = subparsers.add_parser(
+        "sdk-scan",
+        help="Scan a file using the clamav-sdk REST client (requires a running ClamAV API service).",
+    )
+    sdk_scan_parser.add_argument(
+        "--target",
+        required=True,
+        help="File path to scan (e.g. /path/to/file.pdf).",
+    )
+    sdk_scan_parser.add_argument(
+        "--url",
+        default="",
+        help="ClamAV API service base URL (default: value of CLAMAV_API_URL env var or http://localhost:6000).",
+    )
+    sdk_scan_parser.add_argument(
+        "--mode",
+        choices=["file", "bytes", "stream"],
+        default="file",
+        help="Scan mode: file (default), bytes (in-memory), or stream.",
+    )
+
     # update sub-command
     subparsers.add_parser("update", help="Update ClamAV virus definitions.")
 
@@ -82,6 +137,7 @@ def main():
 
     dispatch = {
         "scan": cmd_scan,
+        "sdk-scan": cmd_sdk_scan,
         "update": cmd_update,
         "repair": cmd_repair,
     }
