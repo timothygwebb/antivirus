@@ -47,6 +47,8 @@ Requirements:
 pip install -r requirements.txt
 ```
 
+The `clamav-sdk` package (listed in `requirements.txt`) is required for `SDKScanAgent` and the `sdk-scan` CLI command. Tests for those components mock the SDK so no live ClamAV service is needed to run the test suite.
+
 ## Submitting Changes
 
 1. Ensure your changes pass all tests.
