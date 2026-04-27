@@ -24,8 +24,9 @@ from clamav_sdk.exceptions import (
     ClamAVBadRequestError,
 )
 
-# Default ClamAV API service URL.  Override with the CLAMAV_API_URL env var.
-DEFAULT_API_URL = os.environ.get("CLAMAV_API_URL", "http://localhost:6000")
+# Fallback ClamAV API service URL used when neither the constructor argument
+# nor the CLAMAV_API_URL env var is provided.
+_FALLBACK_API_URL = "http://localhost:6000"
 
 
 class ClamAVSDKClient:
@@ -50,7 +51,9 @@ class ClamAVSDKClient:
     """
 
     def __init__(self, url: Optional[str] = None) -> None:
-        self._url = url or DEFAULT_API_URL
+        # Read the env var at instantiation time so that changes made after
+        # module import (e.g. in tests or long-running processes) are honoured.
+        self._url = url or os.environ.get("CLAMAV_API_URL") or _FALLBACK_API_URL
         self._client = ClamAVClient(self._url)
 
     # ------------------------------------------------------------------

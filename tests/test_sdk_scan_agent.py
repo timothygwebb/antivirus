@@ -2,7 +2,7 @@
 tests/test_sdk_scan_agent.py — unit tests for agents.sdk_scan_agent.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from agents.sdk_scan_agent import SDKScanAgent
 

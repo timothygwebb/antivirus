@@ -4,8 +4,6 @@ tests/test_clamav_sdk_client.py — unit tests for core.clamav_sdk_client.
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.clamav_sdk_client import ClamAVSDKClient, _error_result
 
 
@@ -48,6 +46,30 @@ class TestErrorResult:
         assert result["files_scanned"] == 0
         assert result["threats"] == []
         assert "something went wrong" in result["message"]
+
+
+# ---------------------------------------------------------------------------
+# ClamAVSDKClient URL resolution
+# ---------------------------------------------------------------------------
+
+class TestURLResolution:
+    def test_explicit_url_used(self):
+        with patch("core.clamav_sdk_client.ClamAVClient") as MockClient:
+            ClamAVSDKClient(url="http://custom:7000")
+        MockClient.assert_called_once_with("http://custom:7000")
+
+    def test_env_var_read_at_instantiation(self, monkeypatch):
+        """CLAMAV_API_URL set after import must be picked up at construction."""
+        monkeypatch.setenv("CLAMAV_API_URL", "http://from-env:9999")
+        with patch("core.clamav_sdk_client.ClamAVClient") as MockClient:
+            ClamAVSDKClient()
+        MockClient.assert_called_once_with("http://from-env:9999")
+
+    def test_fallback_url_when_no_env_var(self, monkeypatch):
+        monkeypatch.delenv("CLAMAV_API_URL", raising=False)
+        with patch("core.clamav_sdk_client.ClamAVClient") as MockClient:
+            ClamAVSDKClient()
+        MockClient.assert_called_once_with("http://localhost:6000")
 
 
 # ---------------------------------------------------------------------------
