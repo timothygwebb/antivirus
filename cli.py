@@ -26,36 +26,40 @@ def cmd_scan(args):
     return 0
 
 
+def _read_file_bytes(path):
+    """Read a file as bytes, returning (data, error_result) tuple.
+
+    Returns ``(bytes, None)`` on success or ``(None, dict)`` on failure.
+    """
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(), None
+    except OSError as exc:
+        return None, {"status": "error", "files_scanned": 0, "threats": [], "message": str(exc)}
+
+
 def cmd_sdk_scan(args):
     """Scan a file using the clamav-sdk REST client."""
     from agents.sdk_scan_agent import SDKScanAgent
 
     agent = SDKScanAgent(url=args.url or None)
 
-    if args.mode == "bytes":
-        try:
-            with open(args.target, "rb") as fh:
-                data = fh.read()
-        except OSError as exc:
-            result = {"status": "error", "files_scanned": 0, "threats": [], "message": str(exc)}
-            print(json.dumps(result, indent=2))
+    if args.mode in ("bytes", "stream"):
+        data, err = _read_file_bytes(args.target)
+        if err is not None:
+            print(json.dumps(err, indent=2))
             return 1
-        result = agent.scan_bytes(data, filename=args.target)
-    elif args.mode == "stream":
-        try:
-            with open(args.target, "rb") as fh:
-                data = fh.read()
-        except OSError as exc:
-            result = {"status": "error", "files_scanned": 0, "threats": [], "message": str(exc)}
-            print(json.dumps(result, indent=2))
-            return 1
-        result = agent.scan_stream(data)
+        if args.mode == "bytes":
+            result = agent.scan_bytes(data, filename=args.target)
+        else:
+            result = agent.scan_stream(data)
     else:
         result = agent.scan_file(args.target)
 
     print(json.dumps(result, indent=2))
-    if result.get("threats") or result.get("status") not in ("completed", "infected"):
-        return 1 if result.get("status") == "error" else 0
+    # Exit 1 when threats are found or an error occurred; 0 on clean scan
+    if result.get("threats") or result.get("status") not in ("completed",):
+        return 1
     return 0
 
 
