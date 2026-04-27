@@ -14,7 +14,7 @@ The Antivirus Solution is a multi-project application designed to scan and remov
 - **Full System Scanning**: Scans the C:\ drive using ClamAV's clamscan.exe with real-time progress updates
 - **Real-Time Progress Tracking**: Live updates showing files scanned, threats found, elapsed time, and scan speed
 - **Virus Definition Updates**: Downloads latest virus signatures via freshclam (option 3 in the menu)
-- **Browser Reinstallation**: Detects missing browsers (Chrome, Firefox) and reinstalls them from local installers
+- **Browser Presence Check**: Checks whether common browser executables (Chrome, Firefox, Edge, Opera) are present and reports whether repair appears necessary
 - **Comprehensive Logging**: All operations logged to `antivirus.log` in the application directory
 - **No Admin Required**: Uses local portable ClamAV installation to avoid permission issues
 
@@ -115,14 +115,14 @@ Not supported - modern ClamAV requires Windows XP APIs that are not available on
 ### antivirus.Legacy Project (.NET)
 ```
 antivirus.Legacy/
-├── Program.cs                     # Main entry point with interactive menu and ClamAV management
+├── Program.cs                     # Main entry point, interactive menu, ClamAV management,
+│                                  # and BrowserRepair class (checks browser exe presence)
 ├── antivirus.Legacy/
 │   ├── Scanner.cs                 # Real-time ClamAV scanning with progress monitoring
 │   ├── Logger.cs                  # Logging implementation
-│   ├── BrowserRepair.cs           # Browser detection and reinstallation
 │   ├── BUNDLING-CURL.md           # Guide for bundling curl.exe with the application
-│   └── Tools/                     # Bundled tools directory
-│       └── curl.exe               # Bundled curl (32-bit static build)
+│   └── Tools/                     # Bundled tools directory (curl.exe added at build time;
+│                                  #   not tracked in source control)
 ├── ClamAV/                        # Auto-downloaded portable ClamAV installation
 │   ├── clamscan.exe               # ClamAV scanner executable
 │   ├── freshclam.exe              # Virus definition updater
@@ -136,15 +136,16 @@ antivirus.Legacy/
 
 ### antivirus Project (.NET, modern)
 ```
-antivirus/                         # Root project directory
-├── Program.cs                     # Entry point: MBR check → ClamAV verify → scan → browser repair
-├── Scanner.cs                     # ClamAV integration, download, and extraction logic
-├── BrowserRepair.cs               # Detects and reinstalls missing browsers
+(repo root)
+├── antivirus.csproj               # Project file
+├── Program.cs                     # Entry point: MBR check → ClamAV bootstrap → scan → browser repair
+├── Scanner.cs                     # ClamAV integration, auto-download, extraction, and definitions update
+├── BrowserRepair.cs               # Attempts to reinstall browsers from local installers in BrowserInstallers/
+│                                  # (browser detection stub always triggers reinstall attempt)
 ├── Logger.cs / ILogger.cs         # Logging abstractions and implementations
 ├── Quarantine.cs                  # Quarantine management
 ├── MBRChecker.cs                  # Master Boot Record inspection
-├── ZipExtractor.cs                # ZIP/archive extraction utilities
-└── antivirus.csproj               # Project file
+└── ZipExtractor.cs                # ZIP/archive extraction utilities
 ```
 
 ### Python Agent Layer
@@ -174,7 +175,7 @@ antivirus.Legacy.exe
 
 Menu Options:
 1. **Full System Scan** - Scans C:\ drive recursively for malware with real-time progress
-2. **Browser Repair** - Checks for and reinstalls missing browsers (Chrome, Firefox) from local installers
+2. **Browser Repair** - Checks whether common browser executables (Chrome, Firefox, Edge, Opera) are present and reports the result
 3. **Update Virus Definitions** - Downloads/updates ClamAV virus signatures
 4. **Exit** - Closes the application
 
@@ -198,8 +199,8 @@ antivirus.exe
 
 The application will:
 1. Check the Master Boot Record (MBR) for infections
-2. Verify ClamAV is installed and configured; exit with an error if not
-3. Verify ClamAV virus definitions are present; exit with an error if not
+2. Verify ClamAV is installed; if `clamd.exe` is not found, automatically download and extract the portable ClamAV package (~217MB) and create default config files — exit with an error only if this bootstrap step fails
+3. Attempt to update virus definitions via `freshclam` (skipped if a recent update was already performed)
 4. Prompt for a scan path (press Enter to use the default: your personal folder)
 5. Run the ClamAV scan on the specified path
 6. Automatically launch browser repair on scan completion
@@ -241,8 +242,10 @@ On first run, select **Update Virus Definitions** (option 3) in the menu:
 
 **Important:** Always run option 3 (Update Virus Definitions) before your first scan!
 
-### antivirus (modern) — ClamAV Must Be Present
-The modern project verifies that ClamAV and virus definitions are installed on startup. If either is missing, the application exits with an error message. Use `antivirus.Legacy.exe` option 3 to download ClamAV first (they share the same ClamAV directory), or install ClamAV manually.
+### antivirus (modern) — Automatic ClamAV Bootstrap
+The modern project verifies that ClamAV is available on startup. If ClamAV is missing, it will download and extract the portable ClamAV package automatically and then attempt to update the virus definitions. In other words, the modern application can bootstrap its own local ClamAV setup rather than requiring `antivirus.Legacy.exe` to be run first.
+
+If automatic setup or definition updates fail, you can still use `antivirus.Legacy.exe` option 3 as a fallback (both projects share the same local ClamAV directory), or install ClamAV manually.
 
 ### Python Agent Layer — Install Dependencies
 ```bash
@@ -297,8 +300,9 @@ All configuration is automatic. The application creates:
 - Check that `./ClamAV/database/` contains .cvd files
 
 **"ClamAV is not fully configured" (antivirus modern)**
-- The modern project requires ClamAV to already be downloaded and configured
-- Use `antivirus.Legacy.exe` option 3 to download ClamAV first
+- The modern project will attempt to download and extract ClamAV automatically if missing
+- If the automatic download fails, check your internet connection and that ~217MB of disk space is available
+- As a fallback, use `antivirus.Legacy.exe` option 3 to download ClamAV (both projects share the same ClamAV directory)
 
 **Scan shows 0 infections but you suspect malware**
 - Ensure virus definitions are up-to-date (run option 3)

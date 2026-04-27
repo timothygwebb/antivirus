@@ -3,19 +3,20 @@
 ## System Components
 
 ```
-antivirus/
+antivirus/  (repo root)
 ├── antivirus.Legacy/           # .NET Framework 2.0 interactive application
-│   ├── Program.cs              # Entry point, interactive menu, ClamAV lifecycle
+│   ├── Program.cs              # Entry point, interactive menu, ClamAV lifecycle,
+│   │                           # and BrowserRepair class (checks browser exe presence)
 │   └── antivirus.Legacy/
 │       ├── Scanner.cs          # Real-time ClamAV scan orchestration
-│       ├── Logger.cs           # File-based logging
-│       └── BrowserRepair.cs    # Browser detection and reinstallation
+│       └── Logger.cs           # File-based logging
 │
-├── antivirus/                  # .NET modern application (root project)
-│   ├── Program.cs              # Entry point: MBR → ClamAV verify → scan → browser repair
-│   ├── Scanner.cs              # ClamAV integration, download, and extraction
-│   ├── BrowserRepair.cs        # Detects and reinstalls missing browsers
-│   └── MBRChecker.cs           # Master Boot Record inspection
+├── antivirus.csproj            # .NET modern application project file
+├── Program.cs                  # Entry point: MBR → ClamAV auto-bootstrap → scan → browser repair
+├── Scanner.cs                  # ClamAV integration, auto-download, extraction, and definitions update
+├── BrowserRepair.cs            # Attempts reinstall of browsers from local installers
+│                               # (browser detection stub — always triggers reinstall attempt)
+├── MBRChecker.cs               # Master Boot Record inspection
 │
 ├── agents/                     # Python AI agent layer
 │   ├── scan_agent.py           # ScanAgent: invokes clamscan.exe as a subprocess
