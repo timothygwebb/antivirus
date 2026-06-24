@@ -115,6 +115,23 @@ namespace antivirus.Legacy
                         Console.WriteLine("Exiting application.");
                         break;
                     }
+                    // Add menu option for handling false positives
+                    else if (choice == "5")
+                    {
+                        Console.Write("Enter the path of the file flagged as a false positive: ");
+                        string filePath = Console.ReadLine();
+                        if (!File.Exists(filePath))
+                        {
+                            Console.WriteLine("Invalid file path. Please try again.");
+                        }
+                        else
+                        {
+                            Logger.LogInfo("Handling false positive for file: " + filePath, new object[0]);
+                            Scanner.HandleFalsePositive(filePath);
+                        }
+                        Console.WriteLine("Press Enter to return to menu...");
+                        Console.ReadLine();
+                    }
                     else
                     {
                         Console.WriteLine("Invalid option. Please try again.");

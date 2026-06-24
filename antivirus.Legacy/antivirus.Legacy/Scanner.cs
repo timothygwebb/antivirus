@@ -116,8 +116,21 @@ namespace antivirus.Legacy
                                 if (parts.Length >= 2)
                                 {
                                     string filePath = parts[0].Trim();
+                                    string infectionType = parts[1].Trim();
                                     infectedFiles.Add(filePath);
+
+                                    // Define action taken (e.g., No Action for now)
+                                    string actionTaken = "No Action";
+
+                                    // Display detailed infection information
                                     Console.WriteLine($"\n⚠ INFECTED: {filePath}");
+                                    Console.WriteLine($"   Infection Type: {infectionType}");
+                                    Console.WriteLine($"   Action Taken: {actionTaken}");
+
+                                    // Log detailed infection information
+                                    Logger.LogInfo($"Infected File: {filePath}", new object[0]);
+                                    Logger.LogInfo($"Infection Type: {infectionType}", new object[0]);
+                                    Logger.LogInfo($"Action Taken: {actionTaken}", new object[0]);
                                 }
                             }
 
@@ -235,10 +248,10 @@ namespace antivirus.Legacy
         private static string FindClamAVDatabaseDirectory()
         {
             // Check local ClamAV database directory
-            string localClamAVDir = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
-            string dbDir = Path.Combine(localClamAVDir, "database");
-            if (Directory.Exists(dbDir))
-                return dbDir;
+            string clamAVPath = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
+            string databasePath = Path.Combine(clamAVPath, "database");
+            if (Directory.Exists(databasePath))
+                return databasePath;
 
             // Check fallback location
             string fallback = Path.Combine(Directory.GetCurrentDirectory(), "clamav-db");
@@ -266,6 +279,68 @@ namespace antivirus.Legacy
             {
                 Console.WriteLine($"Warning: Could not auto-configure KernelEX: {ex.Message}");
                 Console.WriteLine("If ClamAV fails, please install KernelEX from http://kernelex.sourceforge.net/");
+            }
+        }
+
+        // Add method to retrieve signature name and update whitelist
+        public static void HandleFalsePositive(string filePath)
+        {
+            try
+            {
+                // Run clamscan to get the signature name
+                string clamscanPath = FindClamscanExecutable();
+                if (string.IsNullOrEmpty(clamscanPath))
+                {
+                    Console.WriteLine("ERROR: clamscan.exe not found. Cannot handle false positive.");
+                    return;
+                }
+
+                ProcessStartInfo processInfo = new ProcessStartInfo
+                {
+                    FileName = clamscanPath,
+                    Arguments = $"--infected --no-summary \"{filePath}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                string signatureName = null;
+                using (Process process = Process.Start(processInfo))
+                {
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null && e.Data.Contains("FOUND"))
+                        {
+                            string[] parts = e.Data.Split(':');
+                            if (parts.Length >= 2)
+                            {
+                                signatureName = parts[1].Trim();
+                                Console.WriteLine($"Signature Name: {signatureName}");
+                            }
+                        }
+                    };
+
+                    process.BeginOutputReadLine();
+                    process.WaitForExit();
+                }
+
+                if (string.IsNullOrEmpty(signatureName))
+                {
+                    Console.WriteLine("No signature name found. The file may not be flagged as infected.");
+                    return;
+                }
+
+                // Update whitelist.ign2
+                string clamAVPath = Path.Combine(Directory.GetCurrentDirectory(), "ClamAV");
+                string databasePath = Path.Combine(clamAVPath, "database");
+                string whitelistPath = Path.Combine(databasePath, "whitelist.ign2");
+                File.AppendAllText(whitelistPath, signatureName + Environment.NewLine);
+                Console.WriteLine($"Signature '{signatureName}' added to whitelist.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error handling false positive: {ex.Message}");
             }
         }
 
